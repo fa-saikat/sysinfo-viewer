@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=System Info Viewer
+Comment=View OS, CPU, memory, network, storage and GPU details
+Exec=/usr/bin/sysinfo-viewer
+Icon=sysinfo-viewer
+Terminal=false
+Categories=System;Monitor;

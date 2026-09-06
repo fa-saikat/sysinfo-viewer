@@ -1,6 +1,7 @@
 [package]
 name = "sysinfo-viewer"
-version = "0.1.0"
+version = "1.1.0-1"
+description = "GUI system information viewer for Linux desktop, built with GPUI. Displays OS/kernel, CPU, memory, network, storage, and GPU details across tabbed views."
 edition = "2021"
 
 [dependencies]
@@ -27,3 +28,20 @@ if-addrs = "0.10"
 [profile.release]
 opt-level = 3
 lto = true
+
+[package.metadata.deb]
+maintainer = "Fahim A Saikat <fahimabrar.saikat@gmail.com>"
+copyright = "2026, Fahim A Saikat"
+license-file = ["LICENSE", "4"]
+extended-description = "GUI system information viewer for Linux desktop, built with GPUI. Displays OS/kernel, CPU, memory, network, storage, and GPU details across tabbed views."
+section = "utils"
+priority = "optional"
+depends = "$auto"
+maintainer-scripts = "packaging/DEBIAN"
+changelog = "packaging/changelog"
+assets = [
+    ["target/release/sysinfo-viewer", "usr/bin/", "755"],
+    ["assets/sysinfo-viewer.svg", "usr/share/icons/hicolor/256x256/apps/sysinfo-viewer.svg", "644"],
+    ["packaging/sysinfo-viewer.desktop", "usr/share/applications/sysinfo-viewer.desktop", "644"],
+    ["assets/backgrounds/*", "usr/share/sysinfo-viewer/assets/backgrounds/", "644"],
+]
