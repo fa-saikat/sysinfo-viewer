@@ -42,6 +42,7 @@ impl FsAssets {
         let candidates = [
             exe_dir.map(|d| d.join("assets")),
             Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")),
+            Some(PathBuf::from("/usr/share/sysinfo-viewer/assets")),
             Some(PathBuf::from("assets")),
         ];
 
@@ -93,15 +94,16 @@ fn main() {
     gpui_platform::application()
     .with_assets(assets)
     .run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
+        let bounds = Bounds::centered(None, size(px(720.0), px(480.0)), cx);
 
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                        titlebar: None,
-                       is_resizable: true,
+                       is_resizable: false,
                        is_movable: true,
                        app_id: Some("SystemInfoViewer".to_string()),
+                       window_min_size: Some(size(px(1024.0), px(768.0))),
                        ..Default::default()
             },
             move |_window, cx| cx.new(|_| SysInfoApp::new(background_availability)),

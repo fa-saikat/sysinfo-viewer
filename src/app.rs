@@ -28,16 +28,6 @@ use crate::tab::{BackgroundAvailability, Tab, TABS};
 // rem size proportional to window width so the layout composes the same
 // way at 1080p and 4K, then build everything out of `rems()`.
 // ---------------------------------------------------------------------
-const BASE_REM_PX: f32 = 16.0;
-const BASE_DESIGN_WIDTH: f32 = 1920.0;
-
-fn apply_responsive_scale(window: &mut Window) {
-    let size = window.viewport_size();
-    let width: f32 = size.width.into();
-    let scale = (width / BASE_DESIGN_WIDTH).clamp(0.7, 2.0);
-    window.set_rem_size(px(BASE_REM_PX * scale));
-}
-
 fn r(rems: f32) -> gpui::Rems {
     gpui::rems(rems)
 }
@@ -874,7 +864,6 @@ fn vram_label(vram: &VramSize) -> String {
 
 impl Render for SysInfoApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        apply_responsive_scale(window);
 
         let content = match self.tab {
             Tab::Overview => self.render_overview(cx).into_any_element(),
