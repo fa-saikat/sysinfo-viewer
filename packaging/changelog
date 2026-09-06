@@ -1,0 +1,6 @@
+sysinfo-viewer (1.1.0-1) unstable; urgency=low
+
+  * feat: deb packaging
+  * fix: remove ui scaling & set min window size
+
+ -- FA Saikat <fahimabrar.saikat@gmail.com>  Sun, 06 Sep 2026 19:22:44 +0600
