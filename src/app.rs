@@ -271,19 +271,35 @@ impl SysInfoApp {
     /// stays on primitives already proven to work in this codebase.
     /// Width fractions are trimmed slightly below `1/cols` to leave room
     /// for the gap between cells without forcing an extra wrap.
+    // app.rs
     fn grid(&self, cols: usize, items: Vec<gpui::AnyElement>) -> impl IntoElement {
-        let width_fraction = match cols {
-            2 => 0.485,
-            3 => 0.31,
-            4 => 0.225,
-            n => 1.0 / n as f32,
-        };
+        // Chunk the flat item list into rows of `cols` explicitly, rather than
+        // relying on flex_wrap()'s implicit line-breaking + a hand-guessed
+        // width fraction. This guarantees each row's children sum to exactly
+        // the row's width (flex_1 splits remaining space after gaps evenly),
+        // so a 2-card row lines up with a full-width card below it instead of
+        // falling short by whatever the old fraction under-counted.
+        let mut rows: Vec<Vec<gpui::AnyElement>> = Vec::new();
+        let mut current_row = Vec::new();
 
-        div().flex().flex_wrap().gap(r(0.75)).children(
-            items
-                .into_iter()
-                .map(|el| div().w(gpui::relative(width_fraction)).child(el)),
-        )
+        for item in items {
+            current_row.push(item);
+            if current_row.len() == cols {
+                rows.push(std::mem::take(&mut current_row));
+            }
+        }
+        if !current_row.is_empty() {
+            rows.push(current_row);
+        }
+
+        div().flex().flex_col().gap(r(0.75)).children(rows.into_iter().map(|row| {
+            div()
+            .flex()
+            .flex_row()
+            .items_stretch() // cross-axis stretch: same-row cards share the tallest card's height
+            .gap(r(0.75))
+            .children(row.into_iter().map(|el| div().flex_1().child(el)))
+        }))
     }
 
     fn card_label(&self, label: &'static str) -> impl IntoElement {
@@ -362,6 +378,7 @@ impl SysInfoApp {
                 2,
                 vec![
                     self.card()
+                        .h_full()
                         .child(self.card_label("OS & KERNEL"))
                         .child(self.stat_row("Distribution", os.distro.clone()))
                         .child(self.stat_row("Kernel", os.kernel_version.clone()))
@@ -369,6 +386,7 @@ impl SysInfoApp {
                         .child(self.stat_row("Uptime", os.uptime.clone()))
                         .into_any_element(),
                     self.card()
+                        .h_full()
                         .child(
                             div()
                                 .flex()
@@ -407,6 +425,7 @@ impl SysInfoApp {
 
     fn memory_summary_card(&self, mem: &MemoryInfo) -> impl IntoElement {
         self.card()
+            .h_full()
             .child(self.card_label("MEMORY"))
             .child(
                 div()
@@ -538,6 +557,7 @@ impl SysInfoApp {
 
     fn stat_card(&self, label: &'static str, value: String) -> impl IntoElement {
         self.card()
+            .h_full()
             .gap(r(0.3))
             .child(self.card_label(label))
             .child(
