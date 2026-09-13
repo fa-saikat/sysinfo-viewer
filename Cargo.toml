@@ -1,6 +1,6 @@
 [package]
 name = "sysinfo-viewer"
-version = "1.1.0"
+version = "1.2.0"
 description = "GUI system information viewer for Linux desktop, built with GPUI. Displays OS/kernel, CPU, memory, network, storage, and GPU details across tabbed views."
 edition = "2021"
 

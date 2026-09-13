@@ -1,3 +1,10 @@
+sysinfo-viewer (1.2.0-1) unstable; urgency=low
+
+  * bump version to 1.2.0
+  * improve grid layout
+
+ -- FA Saikat <fahimabrar.saikat@gmail.com>  Sun, 13 Sep 2026 18:11:44 +0600
+
 sysinfo-viewer (1.1.0-1) unstable; urgency=low
 
   * feat: deb packaging
