@@ -46,9 +46,7 @@ pub fn fact_tag(text: String) -> Tag {
     Tag::secondary().small().child(text)
 }
 
-/// Warning tag for problem facts (`No match`, missing values). Used by
-/// the detail tabs; kept here so all tag vocabulary lives together.
-#[allow(dead_code)]
+/// Warning tag for problem facts (`No match`, missing values).
 pub fn warn_tag(text: &'static str) -> Tag {
     Tag::warning().small().child(text)
 }

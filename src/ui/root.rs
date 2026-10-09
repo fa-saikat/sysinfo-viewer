@@ -242,6 +242,11 @@ impl RootView {
                         cx,
                     ))
             }
+            Tab::Processor => div()
+                .flex()
+                .flex_col()
+                .gap(px(20.))
+                .children(views::processor(&self.snapshot, cx)),
             _ => div()
                 .flex()
                 .flex_col()

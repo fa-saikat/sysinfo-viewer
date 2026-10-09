@@ -4,6 +4,7 @@
 //! and the per-core chart arrive with their own tickets; until then every
 //! tab renders its full honest content.
 
+use gpui_kit::component::chart::LineChart;
 use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::empty::{
     Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
@@ -13,7 +14,7 @@ use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
-use super::library::{fact_tag, group_title};
+use super::library::{fact_tag, group_title, warn_tag};
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
@@ -155,6 +156,76 @@ pub fn overview(
         group("Device", list(device), cx),
         group("Software", list(software), cx),
     ]
+}
+
+/// Processor: facts plus per-core frequency as a line chart (x is core
+/// index, y is MHz, linear interpolation, dots, accent stroke, y-axis
+/// with tick labels). An empty reading list renders honestly instead of
+/// an empty chart.
+pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+    let cpu = &snapshot.cpu;
+    let virt = cpu.virtualization;
+    let virt_value = div().child(if virt.is_enabled() {
+        fact_tag(virt.label().to_string())
+    } else {
+        warn_tag(virt.label())
+    });
+    let mut details = vec![
+        ("Model", body(&cpu.model, cx)),
+        (
+            "Cores / threads",
+            body(&format!("{} / {}", cpu.physical_cores, cpu.logical_threads), cx),
+        ),
+        (
+            "Max frequency",
+            body(
+                &cpu.max_frequency_mhz
+                    .map(format_frequency_mhz)
+                    .unwrap_or_else(|| "Unknown".to_string()),
+                cx,
+            ),
+        ),
+        ("Architecture", body(&cpu.architecture, cx)),
+        ("Virtualization", virt_value),
+    ];
+    let mut groups = vec![group("Processor", list(details), cx)];
+
+    if cpu.per_core_frequency_mhz.is_empty() {
+        groups.push(group(
+            "Per-core frequency",
+            list(vec![("Readings", muted("No per-core readings", cx))]),
+            cx,
+        ));
+    } else {
+        let points = core_points(cpu);
+        let chart = LineChart::new(points)
+            .x(|point: &(String, f64)| point.0.clone())
+            .y(|point: &(String, f64)| point.1)
+            .linear()
+            .dot()
+            .stroke(cx.theme().primary)
+            .y_axis(true)
+            .y_tick_count(4)
+            .y_tick_format(|value| format!("{:.1}", value / 1000.0))
+            .x_tick_count(4);
+        groups.push(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(group_title("Per-core frequency", Some("GHz".to_string()), cx))
+                .child(
+                    div()
+                        .rounded(cx.theme().radius_lg)
+                        .bg(cx.theme().secondary.opacity(0.45))
+                        .border_1()
+                        .border_color(cx.theme().border.opacity(0.7))
+                        .p(px(16.))
+                        .child(div().h(px(180.)).w_full().child(chart)),
+                ),
+        );
+    }
+    groups
 }
 
 /// Temporary honest state for tabs whose tickets have not landed yet.
