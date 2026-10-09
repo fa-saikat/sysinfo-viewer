@@ -10,7 +10,7 @@ use gpui_kit::component::empty::{
     Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
 };
 use gpui_kit::component::tag::Tag;
-use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::{ActiveTheme, StyledExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
@@ -170,7 +170,7 @@ pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
     } else {
         warn_tag(virt.label())
     });
-    let mut details = vec![
+    let details = vec![
         ("Model", body(&cpu.model, cx)),
         (
             "Cores / threads",
@@ -226,6 +226,107 @@ pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
         );
     }
     groups
+}
+
+/// Memory: headline figures with neutral progress bars, plus the
+/// honest no-swap state instead of an empty row.
+pub fn memory(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+    let mem = &snapshot.memory;
+    let ram = div()
+        .flex()
+        .flex_col()
+        .gap(px(12.))
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .items_baseline()
+                .child(
+                    div()
+                        .text_xl()
+                        .font_semibold()
+                        .text_color(cx.theme().foreground)
+                        .child(format_bytes(mem.used_bytes)),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("of {} used", format_bytes(mem.total_bytes))),
+                ),
+        )
+        .child(super::library::progress_bar(
+            "memory-ram",
+            mem.used_fraction() * 100.0,
+        ))
+        .child(list(
+            vec![
+                ("Total", body(&format_bytes(mem.total_bytes), cx)),
+                ("Used", body(&format_bytes(mem.used_bytes), cx)),
+                ("Available", body(&format_bytes(mem.available_bytes), cx)),
+            ],
+        ));
+    let swap = if mem.has_swap() {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_baseline()
+                    .child(
+                        div()
+                            .text_xl()
+                            .font_semibold()
+                            .text_color(cx.theme().foreground)
+                            .child(format_bytes(mem.swap_used_bytes)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("of {} used", format_bytes(mem.swap_total_bytes))),
+                    ),
+            )
+            .child(super::library::progress_bar(
+                "memory-swap",
+                if mem.swap_total_bytes == 0 {
+                    0.0
+                } else {
+                    mem.swap_used_bytes as f32 / mem.swap_total_bytes as f32 * 100.0
+                },
+            ))
+            .child(list(vec![
+                ("Total", body(&format_bytes(mem.swap_total_bytes), cx)),
+                ("Used", body(&format_bytes(mem.swap_used_bytes), cx)),
+            ]))
+    } else {
+        div().child(list(vec![("Swap", muted("No swap configured", cx))]))
+    };
+    vec![
+        card_group("Memory", ram, cx),
+        card_group("Swap", swap, cx),
+    ]
+}
+
+/// Card wrapper for content richer than a plain description list.
+fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(group_title(title, None, cx))
+        .child(
+            div()
+                .rounded(cx.theme().radius_lg)
+                .bg(cx.theme().secondary.opacity(0.45))
+                .border_1()
+                .border_color(cx.theme().border.opacity(0.7))
+                .p(px(16.))
+                .child(content),
+        )
 }
 
 /// Temporary honest state for tabs whose tickets have not landed yet.

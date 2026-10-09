@@ -53,7 +53,6 @@ pub fn warn_tag(text: &'static str) -> Tag {
 
 /// Determinate progress bar, 0–100. Neutral accent fill; never a status
 /// colour unless something can be lost or needs attention.
-#[allow(dead_code)]
 pub fn progress_bar(id: &'static str, percent_0_100: f32) -> Progress {
     Progress::new(id).value(percent_0_100.clamp(0.0, 100.0))
 }
