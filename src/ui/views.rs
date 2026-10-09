@@ -10,7 +10,7 @@ use gpui_kit::component::empty::{
     Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
 };
 use gpui_kit::component::tag::Tag;
-use gpui_kit::component::{ActiveTheme, StyledExt};
+use gpui_kit::component::{ActiveTheme, Sizable, StyledExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
@@ -327,6 +327,134 @@ fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
                 .p(px(16.))
                 .child(content),
         )
+}
+
+/// Network: general facts plus the interfaces table. Only collected
+/// facts render — link type and Wi-Fi details have no collector, so
+/// they stay out rather than being invented.
+pub fn network(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+    let connected = snapshot.network.iter().any(|iface| {
+        iface.state == sysinfo_viewer::data::InterfaceState::Up
+            && iface.name != "lo"
+            && iface.ip_address.is_some()
+    });
+    let status = div().child(if connected {
+        Tag::success().small().child("Connected".to_string())
+    } else {
+        Tag::secondary().small().child("Offline".to_string())
+    });
+    let mut groups = vec![group(
+        "General",
+        list(vec![
+            ("Hostname", mono(&snapshot.os.hostname, cx)),
+            ("Status", status),
+        ]),
+        cx,
+    )];
+
+    if snapshot.network.is_empty() {
+        groups.push(group(
+            "Interfaces",
+            list(vec![("Interfaces", muted("No interfaces found", cx))]),
+            cx,
+        ));
+        return groups;
+    }
+
+    let mut rows = div().flex().flex_col().child(table_head(
+        vec![
+            ("Name".to_string(), Some(90.0)),
+            ("IPv4".to_string(), None),
+            ("MAC".to_string(), Some(150.0)),
+            ("State".to_string(), Some(64.0)),
+        ],
+        cx,
+    ));
+    for iface in &snapshot.network {
+        rows = rows.child(interface_row(iface, cx));
+    }
+    groups.push(
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(group_title(
+                "Interfaces",
+                Some(format!("{} interfaces", snapshot.network.len())),
+                cx,
+            ))
+            .child(
+                div()
+                    .rounded(cx.theme().radius_lg)
+                    .bg(cx.theme().secondary.opacity(0.45))
+                    .border_1()
+                    .border_color(cx.theme().border.opacity(0.7))
+                    .overflow_hidden()
+                    .child(rows),
+            ),
+    );
+    groups
+}
+
+/// Table header row: 34 high, muted small labels on the header fill.
+/// A `None` width flexes to fill the remaining space.
+fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
+    let mut row = div()
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .h(px(34.))
+        .px(px(12.))
+        .bg(cx.theme().table_head);
+    for (label, width) in columns {
+        let cell = div()
+            .text_xs()
+            .font_medium()
+            .text_color(cx.theme().muted_foreground)
+            .child(label);
+        row = match width {
+            Some(w) => row.child(div().w(px(w)).flex_shrink_0().child(cell)),
+            None => row.child(div().flex_1().min_w_0().child(cell)),
+        };
+    }
+    row
+}
+
+fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Div {
+    use sysinfo_viewer::data::InterfaceState;
+    let state = match iface.state {
+        InterfaceState::Up => div().child(Tag::success().small().child("Up".to_string())),
+        InterfaceState::Down => div().child(Tag::secondary().small().child("Down".to_string())),
+        InterfaceState::Unknown => {
+            div().child(Tag::secondary().small().child("Unknown".to_string()))
+        }
+    };
+    let mac = if iface.mac_address.is_empty() {
+        muted("—", cx)
+    } else {
+        mono(&iface.mac_address, cx)
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .h(px(54.))
+        .px(px(12.))
+        .border_t_1()
+        .border_color(cx.theme().border.opacity(0.7))
+        .hover(|style| style.bg(cx.theme().table_hover))
+        .child(
+            div()
+                .w(px(90.))
+                .flex_shrink_0()
+                .child(mono(&iface.name, cx)),
+        )
+        .child(div().flex_1().min_w_0().child(mono(
+            iface.ip_address.as_deref().unwrap_or("—"),
+            cx,
+        )))
+        .child(div().w(px(150.)).flex_shrink_0().child(mac))
+        .child(div().w(px(64.)).flex_shrink_0().child(state))
 }
 
 /// Temporary honest state for tabs whose tickets have not landed yet.
