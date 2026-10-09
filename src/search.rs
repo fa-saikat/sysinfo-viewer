@@ -105,6 +105,16 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 text("Architecture", &cpu.architecture),
                 text("Virtualization", cpu.virtualization.label()),
             ];
+            if !cpu.cache.is_empty() {
+                rows.push(text(
+                    "Cache",
+                    &cpu.cache
+                        .iter()
+                        .map(|entry| entry.label())
+                        .collect::<Vec<_>>()
+                        .join(" · "),
+                ));
+            }
             rows.extend(
                 cpu.per_core_frequency_mhz
                     .iter()
@@ -137,8 +147,9 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
             ];
             rows.extend(snapshot.network.iter().map(|iface| {
                 format!(
-                    "{} {} {} {}",
+                    "{} {} {} {} {}",
                     iface.name,
+                    iface.iface_type.label(),
                     iface.ip_address.as_deref().unwrap_or("—"),
                     if iface.mac_address.is_empty() {
                         "—"

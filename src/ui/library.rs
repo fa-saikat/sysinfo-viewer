@@ -46,11 +46,6 @@ pub fn fact_tag(text: String) -> Tag {
     Tag::secondary().small().child(text)
 }
 
-/// Warning tag for problem facts (`No match`, missing values).
-pub fn warn_tag(text: &'static str) -> Tag {
-    Tag::warning().small().child(text)
-}
-
 /// Determinate progress bar, 0–100. Neutral accent fill; never a status
 /// colour unless something can be lost or needs attention.
 pub fn progress_bar(id: impl Into<gpui_kit::ElementId>, percent_0_100: f32) -> Progress {
@@ -100,6 +95,41 @@ pub fn notice_row(
                 ),
         )
         .child(action)
+}
+
+/// State badge in the mockup's outline look: tinted fill, tone border,
+/// tone text. `Good` (green) for enabled or healthy, `Bad` (red) for
+/// disabled. The badge hugs its content by construction.
+pub enum BadgeTone {
+    Good,
+    Bad,
+}
+
+pub fn state_badge(text: String, tone: BadgeTone, cx: &App) -> Div {
+    let color = match tone {
+        BadgeTone::Good => cx.theme().success,
+        BadgeTone::Bad => cx.theme().danger,
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .flex_shrink_0()
+        .px(px(8.))
+        .py(px(2.))
+        .rounded(px(6.))
+        .border_1()
+        .text_xs()
+        .text_color(color)
+        .border_color(color)
+        .bg(color.opacity(0.1))
+        .child(text)
+}
+
+/// Wraps a cell element so it hugs its content at the row start instead
+/// of stretching across a wide value cell.
+pub fn hug(element: Div) -> Div {
+    div().flex().flex_row().justify_start().child(element)
 }
 
 /// Small Lucide glyph in muted, for input prefixes and table adornments.

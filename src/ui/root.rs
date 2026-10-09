@@ -185,7 +185,7 @@ impl RootView {
                             .text_color(cx.theme().muted_foreground)
                             .child(self.subtitle()),
                     )
-                    .child(div().flex().gap(px(6.)).mt(px(10.)).children(stats)),
+                    .child(div().flex().gap(px(8.)).mt(px(12.)).children(stats)),
             )
             .child(div().flex_1())
             .child(actions)
@@ -402,8 +402,11 @@ impl RootView {
     }
 }
 
-/// The Overview copy target: plain facts, one per line.
+/// The Overview copy target: plain facts, one per line, across every
+/// tab. The serial goes out as collected — copying is an explicit act,
+/// and a details report without it is incomplete.
 fn overview_report(snapshot: &SystemSnapshot, serial: Option<String>) -> String {
+    use sysinfo_viewer::data::{format_bytes, vram_label};
     let mut lines = vec![
         format!("Distribution: {}", snapshot.os.distro),
         format!("Kernel: {}", snapshot.os.kernel_version),
@@ -415,10 +418,44 @@ fn overview_report(snapshot: &SystemSnapshot, serial: Option<String>) -> String 
         ),
         format!(
             "Memory: {} used of {}",
-            sysinfo_viewer::data::format_bytes(snapshot.memory.used_bytes),
-            sysinfo_viewer::data::format_bytes(snapshot.memory.total_bytes)
+            format_bytes(snapshot.memory.used_bytes),
+            format_bytes(snapshot.memory.total_bytes)
         ),
     ];
+    match snapshot.gpus.first() {
+        Some(gpu) => lines.push(format!(
+            "Graphics: {} ({}; {})",
+            gpu.model,
+            vram_label(&gpu.vram, snapshot.memory.total_bytes),
+            gpu.driver
+        )),
+        None => lines.push("Graphics: No GPU detected".to_string()),
+    }
+    if snapshot.storage.is_empty() {
+        lines.push("Storage: No mounted devices".to_string());
+    } else {
+        for device in &snapshot.storage {
+            lines.push(format!(
+                "Storage {}: {} used of {} ({})",
+                device.mount_point,
+                format_bytes(device.used_bytes()),
+                format_bytes(device.total_bytes),
+                device.filesystem
+            ));
+        }
+    }
+    if snapshot.network.is_empty() {
+        lines.push("Network: No interfaces found".to_string());
+    } else {
+        for iface in &snapshot.network {
+            lines.push(format!(
+                "Network {}: {} ({})",
+                iface.name,
+                iface.ip_address.as_deref().unwrap_or("no address"),
+                iface.state.label()
+            ));
+        }
+    }
     if let Some(number) = serial {
         lines.push(format!("Serial number: {number}"));
     }

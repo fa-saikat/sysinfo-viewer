@@ -14,12 +14,13 @@ use gpui_kit::component::{ActiveTheme, Sizable, StyledExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
-use super::library::{fact_tag, group_title, warn_tag};
+use super::library::{fact_tag, group_title, hug, state_badge, BadgeTone};
+use sysinfo_viewer::data::CpuInfo;
 use sysinfo_viewer::search::{is_connected, matches_query, row_texts};
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
-    format_bytes, format_frequency_mhz, product_name, CpuInfo, SystemSnapshot,
+    format_bytes, format_frequency_mhz, product_name, SystemSnapshot,
 };
 
 /// One description-list group inside a rounded card.
@@ -91,22 +92,23 @@ fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
 
 fn body(text: &str, cx: &App) -> Div {
     div()
-        .text_size(px(13.))
+        .text_size(px(12.))
         .text_color(cx.theme().foreground)
         .child(text.to_string())
 }
 
 fn mono(text: &str, cx: &App) -> Div {
     div()
-        .text_size(px(13.))
+        .text_size(px(12.))
         .font_family(cx.theme().mono_font_family.clone())
         .text_color(cx.theme().foreground)
+        .truncate()
         .child(text.to_string())
 }
 
 fn muted(text: &str, cx: &App) -> Div {
     div()
-        .text_size(px(13.))
+        .text_size(px(12.))
         .text_color(cx.theme().muted_foreground)
         .child(text.to_string())
 }
@@ -212,7 +214,7 @@ fn software_texts(snapshot: &SystemSnapshot) -> Vec<String> {
 pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let cpu = &snapshot.cpu;
     let virt = cpu.virtualization;
-    let details = vec![
+    let mut details = vec![
         ("Model", body(&cpu.model, cx)),
         (
             "Cores / threads",
@@ -231,12 +233,25 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         (
             "Virtualization",
             div().child(if virt.is_enabled() {
-                fact_tag(virt.label().to_string())
+                state_badge(virt.label().to_string(), BadgeTone::Good, cx)
             } else {
-                warn_tag(virt.label())
+                state_badge(virt.label().to_string(), BadgeTone::Bad, cx)
             }),
         ),
     ];
+    if !cpu.cache.is_empty() {
+        details.push((
+            "Cache",
+            body(
+                &cpu.cache
+                    .iter()
+                    .map(|entry| entry.label())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+                cx,
+            ),
+        ));
+    }
     let details = filter_rows(details, &processor_detail_texts(snapshot), query);
     let mut groups = vec![group("Processor", list(details, cx), cx)];
 
@@ -287,7 +302,12 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
 }
 
 fn processor_detail_texts(snapshot: &SystemSnapshot) -> Vec<String> {
-    row_texts("processor", snapshot, false)[..5].to_vec()
+    let texts = row_texts("processor", snapshot, false);
+    // Details rows are the inventory minus the per-core point entries.
+    texts
+        .into_iter()
+        .filter(|text| !text.starts_with("Core "))
+        .collect()
 }
 
 /// Memory: headline figures with neutral progress bars, plus the
@@ -395,11 +415,11 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         ("Hostname", mono(&snapshot.os.hostname, cx)),
         (
             "Status",
-            div().child(if is_connected(snapshot) {
-                Tag::success().small().child("Connected".to_string())
+            hug(div().child(if is_connected(snapshot) {
+                state_badge("Connected".to_string(), BadgeTone::Good, cx)
             } else {
-                Tag::secondary().small().child("Offline".to_string())
-            }),
+                state_badge("Offline".to_string(), BadgeTone::Bad, cx)
+            })),
         ),
     ];
     let general = filter_rows(general, &row_texts("network", snapshot, false)[..2].to_vec(), query);
@@ -418,6 +438,7 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let mut rows = div().flex().flex_col().child(table_head(
         vec![
             ("Name".to_string(), Some(90.0)),
+            ("Type".to_string(), Some(90.0)),
             ("IPv4".to_string(), None),
             ("MAC".to_string(), Some(150.0)),
             ("State".to_string(), Some(64.0)),
@@ -479,11 +500,11 @@ fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
 fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Div {
     use sysinfo_viewer::data::InterfaceState;
     let state = match iface.state {
-        InterfaceState::Up => div().child(Tag::success().small().child("Up".to_string())),
-        InterfaceState::Down => div().child(Tag::secondary().small().child("Down".to_string())),
-        InterfaceState::Unknown => {
-            div().child(Tag::secondary().small().child("Unknown".to_string()))
-        }
+        InterfaceState::Up => state_badge("Up".to_string(), BadgeTone::Good, cx),
+        InterfaceState::Down => state_badge("Down".to_string(), BadgeTone::Bad, cx),
+        InterfaceState::Unknown => hug(div().child(
+            Tag::secondary().small().child("Unknown".to_string()),
+        )),
     };
     let mac = if iface.mac_address.is_empty() {
         muted("—", cx)
@@ -504,6 +525,12 @@ fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Di
                 .w(px(90.))
                 .flex_shrink_0()
                 .child(mono(&iface.name, cx)),
+        )
+        .child(
+            div()
+                .w(px(90.))
+                .flex_shrink_0()
+                .child(body(&iface.iface_type.label(), cx)),
         )
         .child(div().flex_1().min_w_0().child(mono(
             iface.ip_address.as_deref().unwrap_or("—"),
@@ -736,10 +763,37 @@ pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot) -> Vec<Tag> {
                 (snapshot.memory.used_fraction() * 100.0).round() as u32
             )),
         ],
-        Tab::Network => vec![fact_tag(format!(
-            "{} interfaces",
-            snapshot.network.len()
-        ))],
+        Tab::Network => {
+            let mut tags = vec![];
+            let connected = snapshot
+                .network
+                .iter()
+                .find(|iface| {
+                    use sysinfo_viewer::data::InterfaceState;
+                    iface.state == InterfaceState::Up
+                        && iface.name != "lo"
+                        && iface.ip_address.is_some()
+                })
+                .and_then(|iface| iface.ip_address.clone());
+            tags.push(if connected.is_some() {
+                fact_tag("Connected".to_string())
+            } else {
+                fact_tag("Offline".to_string())
+            });
+            if let Some(ip) = connected {
+                tags.push(fact_tag(ip));
+            }
+            tags.push(fact_tag(format!(
+                "{} {}",
+                snapshot.network.len(),
+                if snapshot.network.len() == 1 {
+                    "interface"
+                } else {
+                    "interfaces"
+                }
+            )));
+            tags
+        }
         Tab::Storage => {
             let total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
             let used: u64 = snapshot.storage.iter().map(|d| d.used_bytes()).sum();

@@ -147,6 +147,30 @@ fn normal_fixture_collects_every_tab_end_to_end() {
         "sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
         "4900000\n",
     );
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index0/level", "1\n");
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index0/size", "32K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu0/cache/index0/shared_cpu_list",
+        "0-1\n",
+    );
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index1/level", "1\n");
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index1/size", "32K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu0/cache/index1/shared_cpu_list",
+        "0-1\n",
+    );
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index2/level", "2\n");
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index2/size", "512K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list",
+        "0-1\n",
+    );
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index3/level", "3\n");
+    fixture.write("sys/devices/system/cpu/cpu0/cache/index3/size", "16384K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu0/cache/index3/shared_cpu_list",
+        "0-11\n",
+    );
     fixture.stub("lspci", LSPCI_INTEL);
     let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
 
@@ -171,6 +195,14 @@ fn normal_fixture_collects_every_tab_end_to_end() {
     assert_eq!(snapshot.cpu.virtualization, Virtualization::IntelVtx);
     assert_eq!(snapshot.cpu.max_frequency_mhz, Some(4900));
     assert_eq!(format_frequency_mhz(4900), "4.90 GHz");
+    let l3 = snapshot
+        .cpu
+        .cache
+        .iter()
+        .find(|entry| entry.level == 3)
+        .expect("shared L3 from the fixture tree");
+    assert_eq!(l3.size_bytes, 16 * 1024 * 1024);
+    assert!(snapshot.cpu.cache.windows(2).all(|pair| pair[0].level <= pair[1].level));
 
     // Memory inputs: figures plus the bar fractions.
     assert!(snapshot.memory.total_bytes > 0);
@@ -208,6 +240,13 @@ fn no_tools_fixture_degrades_honestly() {
     let snapshot = SystemSnapshot::collect();
 
     assert!(snapshot.gpus.is_empty(), "no lspci means no GPUs, not fake ones");
+    assert!(snapshot.cpu.cache.is_empty());
+    for iface in &snapshot.network {
+        assert!(matches!(
+            iface.iface_type.label(),
+            "Loopback" | "Wi-Fi" | "Ethernet" | "Virtual"
+        ));
+    }
     assert_eq!(
         snapshot.cpu.virtualization.label(),
         "Unknown",

@@ -19,8 +19,30 @@ impl InterfaceState {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InterfaceType {
+    Loopback,
+    Wifi,
+    Ethernet,
+    /// Virtual interfaces with no backing device (bridges, veth pairs,
+    /// tunnels, containers).
+    Virtual,
+}
+
+impl InterfaceType {
+    pub fn label(self) -> &'static str {
+        match self {
+            InterfaceType::Loopback => "Loopback",
+            InterfaceType::Wifi => "Wi-Fi",
+            InterfaceType::Ethernet => "Ethernet",
+            InterfaceType::Virtual => "Virtual",
+        }
+    }
+}
+
 pub struct NetworkInterface {
     pub name: String,
+    pub iface_type: InterfaceType,
     pub state: InterfaceState,
     pub mac_address: String,
     /// First non-loopback IPv4 (falls back to IPv6) bound to this
@@ -35,6 +57,7 @@ pub fn collect() -> Vec<NetworkInterface> {
     let mut interfaces: Vec<NetworkInterface> = networks
         .iter()
         .map(|(name, data)| NetworkInterface {
+            iface_type: detect_iface_type(name),
             name: name.clone(),
             state: read_operstate(name),
             mac_address: data.mac_address().to_string(),
@@ -44,6 +67,31 @@ pub fn collect() -> Vec<NetworkInterface> {
 
     interfaces.sort_by(|a, b| a.name.cmp(&b.name));
     interfaces
+}
+
+/// Classifies the interface kind from sysfs, not the name: `lo` is
+/// loopback, a `wireless/` directory means Wi-Fi, a `device` symlink
+/// means a physical (wired) NIC, and anything else virtual. Pure over
+/// pre-read flags so tests can drive it with canned inputs.
+fn detect_iface_type(name: &str) -> InterfaceType {
+    let base = fixture::sys_path(&format!("/sys/class/net/{name}"));
+    classify_iface_type(
+        name == "lo",
+        base.join("wireless").exists(),
+        base.join("device").exists(),
+    )
+}
+
+fn classify_iface_type(is_loopback: bool, has_wireless: bool, has_device: bool) -> InterfaceType {
+    if is_loopback {
+        InterfaceType::Loopback
+    } else if has_wireless {
+        InterfaceType::Wifi
+    } else if has_device {
+        InterfaceType::Ethernet
+    } else {
+        InterfaceType::Virtual
+    }
 }
 
 /// `/sys/class/net/<iface>/operstate` — Linux-specific but authoritative
@@ -114,5 +162,26 @@ mod tests {
             assert_eq!(classify_operstate(raw), InterfaceState::Unknown);
         }
         assert_eq!(InterfaceState::Unknown.label(), "unknown");
+    }
+
+    #[test]
+    fn classifies_interface_kinds() {
+        assert_eq!(
+            classify_iface_type(true, false, false),
+            InterfaceType::Loopback
+        );
+        assert_eq!(
+            classify_iface_type(false, true, true),
+            InterfaceType::Wifi
+        );
+        assert_eq!(
+            classify_iface_type(false, false, true),
+            InterfaceType::Ethernet
+        );
+        assert_eq!(
+            classify_iface_type(false, false, false),
+            InterfaceType::Virtual
+        );
+        assert_eq!(InterfaceType::Wifi.label(), "Wi-Fi");
     }
 }
