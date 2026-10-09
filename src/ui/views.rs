@@ -6,7 +6,6 @@
 //! matching on the same plain strings the rows are built from.
 
 use gpui_kit::component::chart::LineChart;
-use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::empty::{
     Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
 };
@@ -24,13 +23,13 @@ use sysinfo_viewer::data::{
 };
 
 /// One description-list group inside a rounded card.
-fn group(title: &'static str, list: DescriptionList, cx: &App) -> Div {
+fn group(title: &'static str, rows: Div, cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
         .gap(px(8.))
         .child(group_title(title, None, cx))
-        .child(card(list.into_any_element(), cx))
+        .child(card(rows.into_any_element(), cx))
 }
 
 fn card(content: AnyElement, cx: &App) -> Div {
@@ -38,19 +37,38 @@ fn card(content: AnyElement, cx: &App) -> Div {
         .rounded(cx.theme().radius_lg)
         .bg(cx.theme().secondary.opacity(0.45))
         .border_1()
-        .border_color(cx.theme().border.opacity(0.7))
+        .border_color(cx.theme().border)
         .child(content)
 }
 
-fn list(rows: Vec<(&'static str, Div)>) -> DescriptionList {
-    let mut dl = DescriptionList::new()
-        .label_width(px(96.))
-        .columns(1)
-        .bordered(false);
-    for (label, value) in rows {
-        dl = dl.item(label, value.into_any_element(), 1);
-    }
-    dl
+/// Description-list rows with the mockup's metrics: 170 label column,
+/// 16 horizontal and 9 vertical padding, dividers between rows. The kit's
+/// `DescriptionList` without borders renders flush with no padding, so
+/// rows are custom where the label column matters.
+fn list(rows: Vec<(&'static str, Div)>, cx: &App) -> Div {
+    div().flex().flex_col().children(rows.into_iter().enumerate().map(
+        |(index, (label, value))| {
+            let mut row = div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .px(px(16.))
+                .py(px(9.))
+                .child(
+                    div()
+                        .w(px(170.))
+                        .flex_shrink_0()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(label),
+                )
+                .child(div().flex_1().min_w_0().child(value));
+            if index > 0 {
+                row = row.border_t_1().border_color(cx.theme().border);
+            }
+            row
+        },
+    ))
 }
 
 /// Card wrapper for content richer than a plain description list.
@@ -65,7 +83,7 @@ fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
                 .rounded(cx.theme().radius_lg)
                 .bg(cx.theme().secondary.opacity(0.45))
                 .border_1()
-                .border_color(cx.theme().border.opacity(0.7))
+                .border_color(cx.theme().border)
                 .p(px(16.))
                 .child(content),
         )
@@ -73,14 +91,14 @@ fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
 
 fn body(text: &str, cx: &App) -> Div {
     div()
-        .text_sm()
+        .text_size(px(13.))
         .text_color(cx.theme().foreground)
         .child(text.to_string())
 }
 
 fn mono(text: &str, cx: &App) -> Div {
     div()
-        .text_sm()
+        .text_size(px(13.))
         .font_family(cx.theme().mono_font_family.clone())
         .text_color(cx.theme().foreground)
         .child(text.to_string())
@@ -88,7 +106,7 @@ fn mono(text: &str, cx: &App) -> Div {
 
 fn muted(text: &str, cx: &App) -> Div {
     div()
-        .text_sm()
+        .text_size(px(13.))
         .text_color(cx.theme().muted_foreground)
         .child(text.to_string())
 }
@@ -177,8 +195,8 @@ pub fn overview(
     let device = filter_rows(device, &row_texts("overview", snapshot, serial_shown), query);
     let software = filter_rows(software, &software_texts(snapshot), query);
     vec![
-        group("Device", list(device), cx),
-        group("Software", list(software), cx),
+        group("Device", list(device, cx), cx),
+        group("Software", list(software, cx), cx),
     ]
 }
 
@@ -220,7 +238,7 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         ),
     ];
     let details = filter_rows(details, &processor_detail_texts(snapshot), query);
-    let mut groups = vec![group("Processor", list(details), cx)];
+    let mut groups = vec![group("Processor", list(details, cx), cx)];
 
     let chart_matches = matches_query(query, "Per-core frequency")
         || cpu
@@ -253,7 +271,7 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
                         .rounded(cx.theme().radius_lg)
                         .bg(cx.theme().secondary.opacity(0.45))
                         .border_1()
-                        .border_color(cx.theme().border.opacity(0.7))
+                        .border_color(cx.theme().border)
                         .p(px(16.))
                         .child(div().h(px(180.)).w_full().child(chart)),
                 ),
@@ -261,7 +279,7 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     } else if cpu.per_core_frequency_mhz.is_empty() {
         groups.push(group(
             "Per-core frequency",
-            list(vec![("Readings", muted("No per-core readings", cx))]),
+            list(vec![("Readings", muted("No per-core readings", cx))], cx),
             cx,
         ));
     }
@@ -308,11 +326,14 @@ pub fn memory(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
             "memory-ram",
             mem.used_fraction() * 100.0,
         ))
-        .child(list(filter_rows(
-            ram_rows,
-            &row_texts("memory", snapshot, false)[..3].to_vec(),
-            query,
-        )));
+        .child(list(
+            filter_rows(
+                ram_rows,
+                &row_texts("memory", snapshot, false)[..3].to_vec(),
+                query,
+            ),
+            cx,
+        ));
     let swap = if mem.has_swap() {
         let swap_rows = vec![
             ("Total", body(&format_bytes(mem.swap_total_bytes), cx)),
@@ -349,13 +370,16 @@ pub fn memory(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
                     mem.swap_used_bytes as f32 / mem.swap_total_bytes as f32 * 100.0
                 },
             ))
-            .child(list(filter_rows(
-                swap_rows,
-                &row_texts("memory", snapshot, false)[3..].to_vec(),
-                query,
-            )))
+            .child(list(
+                filter_rows(
+                    swap_rows,
+                    &row_texts("memory", snapshot, false)[3..].to_vec(),
+                    query,
+                ),
+                cx,
+            ))
     } else {
-        div().child(list(vec![("Swap", muted("No swap configured", cx))]))
+        div().child(list(vec![("Swap", muted("No swap configured", cx))], cx))
     };
     vec![
         card_group("Memory", ram, cx),
@@ -379,13 +403,13 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         ),
     ];
     let general = filter_rows(general, &row_texts("network", snapshot, false)[..2].to_vec(), query);
-    let mut groups = vec![group("General", list(general), cx)];
+    let mut groups = vec![group("General", list(general, cx), cx)];
 
     let texts = row_texts("network", snapshot, false);
     if snapshot.network.is_empty() {
         groups.push(group(
             "Interfaces",
-            list(vec![("Interfaces", muted("No interfaces found", cx))]),
+            list(vec![("Interfaces", muted("No interfaces found", cx))], cx),
             cx,
         ));
         return groups;
@@ -420,7 +444,7 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
                     .rounded(cx.theme().radius_lg)
                     .bg(cx.theme().secondary.opacity(0.45))
                     .border_1()
-                    .border_color(cx.theme().border.opacity(0.7))
+                    .border_color(cx.theme().border)
                     .overflow_hidden()
                     .child(rows),
             ),
@@ -436,7 +460,7 @@ fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
         .items_center()
         .gap(px(12.))
         .h(px(34.))
-        .px(px(12.))
+        .px(px(16.))
         .bg(cx.theme().table_head);
     for (label, width) in columns {
         let cell = div()
@@ -471,9 +495,9 @@ fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Di
         .items_center()
         .gap(px(12.))
         .h(px(54.))
-        .px(px(12.))
+        .px(px(16.))
         .border_t_1()
-        .border_color(cx.theme().border.opacity(0.7))
+        .border_color(cx.theme().border)
         .hover(|style| style.bg(cx.theme().table_hover))
         .child(
             div()
@@ -495,7 +519,7 @@ pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     if snapshot.storage.is_empty() {
         return vec![group(
             "Devices",
-            list(vec![("Devices", muted("No mounted devices", cx))]),
+            list(vec![("Devices", muted("No mounted devices", cx))], cx),
             cx,
         )];
     }
@@ -534,7 +558,7 @@ pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
                 .rounded(cx.theme().radius_lg)
                 .bg(cx.theme().secondary.opacity(0.45))
                 .border_1()
-                .border_color(cx.theme().border.opacity(0.7))
+                .border_color(cx.theme().border)
                 .overflow_hidden()
                 .child(rows),
         )]
@@ -545,10 +569,10 @@ fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
         .flex()
         .flex_col()
         .gap(px(8.))
-        .px(px(12.))
+        .px(px(16.))
         .py(px(10.))
         .border_t_1()
-        .border_color(cx.theme().border.opacity(0.7))
+        .border_color(cx.theme().border)
         .child(
             div()
                 .flex()
@@ -658,7 +682,7 @@ pub fn graphics(
                                 .rounded(cx.theme().radius_lg)
                                 .bg(cx.theme().secondary.opacity(0.45))
                                 .border_1()
-                                .border_color(cx.theme().border.opacity(0.7))
+                                .border_color(cx.theme().border)
                                 .child(list(
                                     vec![
                                         ("Model", body(&gpu.model, cx)),
@@ -671,6 +695,7 @@ pub fn graphics(
                                         ),
                                         ("Driver", mono(&gpu.driver, cx)),
                                     ],
+                                    cx,
                                 ))
                         }),
                 )

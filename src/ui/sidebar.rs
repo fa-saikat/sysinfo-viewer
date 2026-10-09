@@ -35,22 +35,26 @@ pub fn context_tile(icon: IconName, tile_px: f32, glyph_px: f32, fill: Hsla, gly
         )
 }
 
-/// Brand mark: 32 inverted tile plus name and version. Inverted per the
-/// spec: a foreground tile carrying a background glyph.
-pub fn brand(foreground: Hsla, background: Hsla) -> Div {
+/// Brand mark: 32 inverted tile plus bold name and muted version.
+pub fn brand(tile: Hsla, glyph: Hsla, muted: Hsla) -> Div {
     div()
         .flex()
         .items_center()
         .gap(px(10.))
         .px(px(6.))
         .pb(px(14.))
-        .child(context_tile(IconName::Cpu, 32.0, 18.0, foreground, background))
+        .child(context_tile(IconName::Cpu, 32.0, 18.0, tile, glyph))
         .child(
             div()
                 .flex()
                 .flex_col()
-                .child(div().text_sm().font_semibold().child("SysInfo"))
-                .child(div().text_xs().child("v1.2.0")),
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui_kit::FontWeight::BOLD)
+                        .child("SysInfo"),
+                )
+                .child(div().text_xs().text_color(muted).child("v1.2.0")),
         )
 }
 
@@ -87,8 +91,9 @@ impl SidebarItem for NavItem {
             NavItem::Group(label) => div()
                 .id(id)
                 .px(px(8.))
-                .py(px(6.))
-                .text_xs()
+                .pt(px(10.))
+                .pb(px(4.))
+                .text_size(px(11.))
                 .font_semibold()
                 .text_color(cx.theme().muted_foreground)
                 .child(label.to_uppercase())
@@ -102,6 +107,7 @@ impl SidebarItem for NavItem {
                     .items_center()
                     .gap(px(10.))
                     .px(px(8.))
+                    .my(px(3.))
                     .h(px(36.))
                     .rounded(cx.theme().radius)
                     .cursor_pointer()

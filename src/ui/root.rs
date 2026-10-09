@@ -14,8 +14,8 @@ use gpui_kit::component::sidebar::Sidebar;
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    div, px, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, Keystroke, Render,
-    Styled, Subscription, Window,
+    div, px, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, FontWeight,
+    Keystroke, Render, Styled, Subscription, Window,
 };
 use super::dialogs;
 use super::library::{header_tile, notice_row, small_icon};
@@ -175,7 +175,7 @@ impl RootView {
                     .child(
                         div()
                             .text_2xl()
-                            .font_semibold()
+                            .font_weight(FontWeight::BOLD)
                             .text_color(cx.theme().foreground)
                             .child(self.tab.label()),
                     )
@@ -228,17 +228,22 @@ impl RootView {
         Sidebar::new("sidebar")
             .collapsible(false)
             .w(px(SIDEBAR_WIDTH))
-            .header(brand(cx.theme().foreground, cx.theme().background))
+            .header(brand(
+                cx.theme().foreground,
+                cx.theme().background,
+                cx.theme().muted_foreground,
+            ))
             .children(rows)
             .footer(
                 div()
+                    .w_full()
                     .flex()
                     .items_center()
                     .gap(px(4.))
-                    .pt(px(6.))
+                    .pt(px(10.))
                     .mt(px(6.))
                     .border_t_1()
-                    .border_color(cx.theme().border)
+                    .border_color(cx.theme().sidebar_border)
                     .child(div().flex_1().flex().justify_start().child(about))
                     .child(div().w(px(36.)).flex().justify_center().child(theme_toggle)),
             )
