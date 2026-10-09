@@ -10,7 +10,7 @@ mod ui;
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{
-    px, size, App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions,
+    px, size, App, AppContext, Bounds, KeyBinding, Window, WindowBounds, WindowOptions,
 };
 
 use assets::AppAssets;
@@ -46,13 +46,16 @@ fn main() {
             cx.bind_keys([KeyBinding::new("/", FocusSearch, Some(KEY_CONTEXT))]);
 
             let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
-            cx.open_window(
+            gpui_kit::open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(1024.), px(680.))),
                     ..Default::default()
                 },
-                |window, cx| cx.new(|cx| RootView::new(window, cx, initial_tab)),
+                cx,
+                |window: &mut Window, cx: &mut App| {
+                    cx.new(|cx| RootView::new(window, cx, initial_tab))
+                },
             )
             .expect("failed to open window");
 
