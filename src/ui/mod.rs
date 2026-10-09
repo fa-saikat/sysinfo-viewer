@@ -6,4 +6,6 @@ pub mod root;
 pub mod sidebar;
 pub mod views;
 
-pub use root::RootView;
+pub use root::{RootView, KEY_CONTEXT};
+
+gpui_kit::actions!(sysinfo, [FocusSearch]);

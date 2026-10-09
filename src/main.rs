@@ -10,13 +10,13 @@ mod ui;
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{
-    px, size, App, AppContext, Bounds, WindowBounds, WindowOptions,
+    px, size, App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions,
 };
 
 use assets::AppAssets;
 use tab::Tab;
 use theme::{apply_accent, BRAND_ACCENT};
-use ui::RootView;
+use ui::{FocusSearch, RootView, KEY_CONTEXT};
 
 fn main() {
     // Harness launch switches (see docs/testing.md): open on the named
@@ -43,6 +43,7 @@ fn main() {
             Theme::update(cx, |theme| {
                 theme.sheet.margin_top = px(0.);
             });
+            cx.bind_keys([KeyBinding::new("/", FocusSearch, Some(KEY_CONTEXT))]);
 
             let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
             cx.open_window(

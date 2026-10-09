@@ -102,6 +102,13 @@ pub fn notice_row(
         .child(action)
 }
 
+/// Case-insensitive substring match over a row's text. An empty query
+/// matches everything, so unfiltered renders stay untouched.
+pub fn matches_query(query: &str, haystack: &str) -> bool {
+    let needle = query.trim().to_lowercase();
+    needle.is_empty() || haystack.to_lowercase().contains(&needle)
+}
+
 /// Small Lucide glyph in muted, for input prefixes and table adornments.
 #[allow(dead_code)]
 pub fn small_icon(icon: IconName, cx: &App) -> Icon {

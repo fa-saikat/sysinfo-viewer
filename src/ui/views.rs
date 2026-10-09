@@ -1,8 +1,9 @@
 //! Tab bodies: description lists, tables and charts per tab.
 //!
-//! Each builder is pure layout over a collected snapshot. Search filtering
-//! and the per-core chart arrive with their own tickets; until then every
-//! tab renders its full honest content.
+//! Every builder takes the toolbar query and hides non-matching rows.
+//! Row inventories for counting and auto-switch live in [`row_texts`]
+//! and [`group_titles`]: keep them in sync with what the builders render,
+//! matching on the same plain strings the rows are built from.
 
 use gpui_kit::component::chart::LineChart;
 use gpui_kit::component::description_list::DescriptionList;
@@ -14,7 +15,7 @@ use gpui_kit::component::{ActiveTheme, Sizable, StyledExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
-use super::library::{fact_tag, group_title, warn_tag};
+use super::library::{fact_tag, group_title, matches_query, warn_tag};
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
@@ -28,14 +29,16 @@ fn group(title: &'static str, list: DescriptionList, cx: &App) -> Div {
         .flex_col()
         .gap(px(8.))
         .child(group_title(title, None, cx))
-        .child(
-            div()
-                .rounded(cx.theme().radius_lg)
-                .bg(cx.theme().secondary.opacity(0.45))
-                .border_1()
-                .border_color(cx.theme().border.opacity(0.7))
-                .child(list),
-        )
+        .child(card(list.into_any_element(), cx))
+}
+
+fn card(content: AnyElement, cx: &App) -> Div {
+    div()
+        .rounded(cx.theme().radius_lg)
+        .bg(cx.theme().secondary.opacity(0.45))
+        .border_1()
+        .border_color(cx.theme().border.opacity(0.7))
+        .child(content)
 }
 
 fn list(rows: Vec<(&'static str, Div)>) -> DescriptionList {
@@ -47,6 +50,24 @@ fn list(rows: Vec<(&'static str, Div)>) -> DescriptionList {
         dl = dl.item(label, value.into_any_element(), 1);
     }
     dl
+}
+
+/// Card wrapper for content richer than a plain description list.
+fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(group_title(title, None, cx))
+        .child(
+            div()
+                .rounded(cx.theme().radius_lg)
+                .bg(cx.theme().secondary.opacity(0.45))
+                .border_1()
+                .border_color(cx.theme().border.opacity(0.7))
+                .p(px(16.))
+                .child(content),
+        )
 }
 
 fn body(text: &str, cx: &App) -> Div {
@@ -71,6 +92,201 @@ fn muted(text: &str, cx: &App) -> Div {
         .child(text.to_string())
 }
 
+/// Group titles per tab, so a query matching a title keeps its group.
+fn group_titles(tab: Tab) -> &'static [&'static str] {
+    match tab {
+        Tab::Overview => &["Device", "Software"],
+        Tab::Processor => &["Processor", "Per-core frequency"],
+        Tab::Memory => &["Memory", "Swap"],
+        Tab::Network => &["General", "Interfaces"],
+        Tab::Storage => &["Devices"],
+        Tab::Graphics => &["Detected GPUs"],
+    }
+}
+
+/// Every filterable row's plain text per tab, in render order. Counts and
+/// auto-switch derive from this; builders match on the same strings.
+pub fn row_texts(tab: Tab, snapshot: &SystemSnapshot, serial_shown: bool) -> Vec<String> {
+    let text = |label: &str, value: &str| format!("{label} {value}");
+    match tab {
+        Tab::Overview => {
+            let cpu = &snapshot.cpu;
+            let max_freq = cpu
+                .max_frequency_mhz
+                .map(format_frequency_mhz)
+                .unwrap_or_else(|| "Unknown".to_string());
+            let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
+            let mut rows = vec![
+                text(
+                    "Model",
+                    &product_name().unwrap_or_else(|| "Unknown".to_string()),
+                ),
+                text(
+                    "Processor",
+                    &format!("{} · {} threads · {}", cpu.model, cpu.logical_threads, max_freq),
+                ),
+                text("Memory", &format_bytes(snapshot.memory.total_bytes)),
+                text(
+                    "Graphics",
+                    &snapshot
+                        .gpus
+                        .first()
+                        .map(|gpu| gpu.model.clone())
+                        .unwrap_or_else(|| "No GPU detected".to_string()),
+                ),
+                text(
+                    "Storage",
+                    &if storage_total > 0 {
+                        format_bytes(storage_total)
+                    } else {
+                        "No mounted devices".to_string()
+                    },
+                ),
+                text(
+                    "Serial number",
+                    &match serial_number_text(serial_shown) {
+                        Some(shown) => shown,
+                        None => "Unknown".to_string(),
+                    },
+                ),
+                text("Distribution", &snapshot.os.distro),
+                text("Kernel", &snapshot.os.kernel_version),
+                text("Architecture", &snapshot.cpu.architecture),
+                text("Hostname", &snapshot.os.hostname),
+                text("Uptime", &snapshot.os.uptime),
+            ];
+            rows
+        }
+        Tab::Processor => {
+            let cpu = &snapshot.cpu;
+            let mut rows = vec![
+                text("Model", &cpu.model),
+                text(
+                    "Cores / threads",
+                    &format!("{} / {}", cpu.physical_cores, cpu.logical_threads),
+                ),
+                text(
+                    "Max frequency",
+                    &cpu.max_frequency_mhz
+                        .map(format_frequency_mhz)
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                ),
+                text("Architecture", &cpu.architecture),
+                text("Virtualization", cpu.virtualization.label()),
+            ];
+            rows.extend(
+                cpu.per_core_frequency_mhz
+                    .iter()
+                    .enumerate()
+                    .map(|(index, mhz)| format!("Core {index} {mhz} MHz")),
+            );
+            rows
+        }
+        Tab::Memory => {
+            let mem = &snapshot.memory;
+            vec![
+                text("Total", &format_bytes(mem.total_bytes)),
+                text("Used", &format_bytes(mem.used_bytes)),
+                text("Available", &format_bytes(mem.available_bytes)),
+                text("Swap total", &format_bytes(mem.swap_total_bytes)),
+                text("Swap used", &format_bytes(mem.swap_used_bytes)),
+            ]
+        }
+        Tab::Network => {
+            let mut rows = vec![
+                text("Hostname", &snapshot.os.hostname),
+                text(
+                    "Status",
+                    if is_connected(snapshot) {
+                        "Connected"
+                    } else {
+                        "Offline"
+                    },
+                ),
+            ];
+            rows.extend(snapshot.network.iter().map(|iface| {
+                format!(
+                    "{} {} {} {}",
+                    iface.name,
+                    iface.ip_address.as_deref().unwrap_or("—"),
+                    if iface.mac_address.is_empty() {
+                        "—"
+                    } else {
+                        &iface.mac_address
+                    },
+                    iface.state.label()
+                )
+            }));
+            rows
+        }
+        Tab::Storage => snapshot
+            .storage
+            .iter()
+            .map(|device| {
+                format!(
+                    "{} {} {} {} / {}",
+                    device.mount_point,
+                    device.device_name,
+                    device.filesystem,
+                    format_bytes(device.used_bytes()),
+                    format_bytes(device.total_bytes)
+                )
+            })
+            .collect(),
+        Tab::Graphics => {
+            if snapshot.gpus.is_empty() {
+                vec!["No GPU details yet".to_string()]
+            } else {
+                let total = snapshot.memory.total_bytes;
+                snapshot
+                    .gpus
+                    .iter()
+                    .map(|gpu| {
+                        format!(
+                            "{} {} {}",
+                            gpu.model,
+                            sysinfo_viewer::data::vram_label(&gpu.vram, total),
+                            gpu.driver
+                        )
+                    })
+                    .collect()
+            }
+        }
+    }
+}
+
+fn serial_number_text(serial_shown: bool) -> Option<String> {
+    // The serial comes from the DMI collector, not the snapshot.
+    sysinfo_viewer::data::serial_number().map(|number| {
+        if serial_shown {
+            number
+        } else {
+            "••••••••••".to_string()
+        }
+    })
+}
+
+/// Keeps rendered rows aligned with their inventory texts: filters the
+/// built rows by the same strings [`row_texts`] counts.
+fn filter_rows(
+    rows: Vec<(&'static str, Div)>,
+    texts: &[String],
+    query: &str,
+) -> Vec<(&'static str, Div)> {
+    rows.into_iter()
+        .zip(texts.iter())
+        .filter(|(_, text)| matches_query(query, text))
+        .map(|((label, element), _)| (label, element))
+        .collect()
+}
+
+fn is_connected(snapshot: &SystemSnapshot) -> bool {
+    use sysinfo_viewer::data::InterfaceState;
+    snapshot.network.iter().any(|iface| {
+        iface.state == InterfaceState::Up && iface.name != "lo" && iface.ip_address.is_some()
+    })
+}
+
 /// Overview: device facts plus software facts, with the serial toggle on
 /// the same line as the serial itself.
 pub fn overview(
@@ -78,6 +294,7 @@ pub fn overview(
     serial: Option<String>,
     serial_shown: bool,
     serial_toggle: Option<AnyElement>,
+    query: &str,
     cx: &App,
 ) -> Vec<Div> {
     let cpu = &snapshot.cpu;
@@ -86,63 +303,48 @@ pub fn overview(
         .map(format_frequency_mhz)
         .unwrap_or_else(|| "Unknown".to_string());
     let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
-
-    let mut device = vec![
-        (
-            "Model",
-            body(&product_name().unwrap_or_else(|| "Unknown".to_string()), cx),
-        ),
-        (
-            "Processor",
-            body(
-                &format!(
-                    "{} · {} threads · {}",
-                    cpu.model, cpu.logical_threads, max_freq
-                ),
-                cx,
-            ),
-        ),
-        (
-            "Memory",
-            body(&format_bytes(snapshot.memory.total_bytes), cx),
-        ),
-        (
-            "Graphics",
-            body(
-                &snapshot
-                    .gpus
-                    .first()
-                    .map(|gpu| gpu.model.clone())
-                    .unwrap_or_else(|| "No GPU detected".to_string()),
-                cx,
-            ),
-        ),
-        (
-            "Storage",
-            body(
-                &if storage_total > 0 {
-                    format_bytes(storage_total)
-                } else {
-                    "No mounted devices".to_string()
-                },
-                cx,
-            ),
-        ),
-    ];
-    if let Some(number) = serial {
-        let shown = if serial_shown {
-            number
-        } else {
-            "••••••••••".to_string()
-        };
-        let mut row = div().flex().items_center().gap(px(10.)).child(mono(&shown, cx));
-        if let Some(toggle) = serial_toggle {
-            row = row.child(toggle);
-        }
-        device.push(("Serial number", row));
+    let model = product_name().unwrap_or_else(|| "Unknown".to_string());
+    let processor = format!("{} · {} threads · {}", cpu.model, cpu.logical_threads, max_freq);
+    let memory = format_bytes(snapshot.memory.total_bytes);
+    let graphics = snapshot
+        .gpus
+        .first()
+        .map(|gpu| gpu.model.clone())
+        .unwrap_or_else(|| "No GPU detected".to_string());
+    let storage = if storage_total > 0 {
+        format_bytes(storage_total)
     } else {
-        device.push(("Serial number", muted("Unknown", cx)));
+        "No mounted devices".to_string()
+    };
+
+    let mut device: Vec<(&str, Div)> = vec![
+        ("Model", body(&model, cx)),
+        ("Processor", body(&processor, cx)),
+        ("Memory", body(&memory, cx)),
+        ("Graphics", body(&graphics, cx)),
+        ("Storage", body(&storage, cx)),
+    ];
+    let shown = serial
+        .as_deref()
+        .map(|number| {
+            if serial_shown {
+                number.to_string()
+            } else {
+                "••••••••••".to_string()
+            }
+        })
+        .unwrap_or_else(|| "Unknown".to_string());
+    let mut serial_row = div()
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .child(mono(&shown, cx));
+    if serial.is_some() {
+        if let Some(toggle) = serial_toggle {
+            serial_row = serial_row.child(toggle);
+        }
     }
+    device.push(("Serial number", serial_row));
 
     let software = vec![
         ("Distribution", body(&snapshot.os.distro, cx)),
@@ -152,24 +354,26 @@ pub fn overview(
         ("Uptime", body(&snapshot.os.uptime, cx)),
     ];
 
+    let device = filter_rows(device, &row_texts(Tab::Overview, snapshot, serial_shown), query);
+    let software = filter_rows(software, &software_texts(snapshot), query);
     vec![
         group("Device", list(device), cx),
         group("Software", list(software), cx),
     ]
 }
 
+fn software_texts(snapshot: &SystemSnapshot) -> Vec<String> {
+    let all = row_texts(Tab::Overview, snapshot, false);
+    all[6..].to_vec()
+}
+
 /// Processor: facts plus per-core frequency as a line chart (x is core
 /// index, y is MHz, linear interpolation, dots, accent stroke, y-axis
 /// with tick labels). An empty reading list renders honestly instead of
 /// an empty chart.
-pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let cpu = &snapshot.cpu;
     let virt = cpu.virtualization;
-    let virt_value = div().child(if virt.is_enabled() {
-        fact_tag(virt.label().to_string())
-    } else {
-        warn_tag(virt.label())
-    });
     let details = vec![
         ("Model", body(&cpu.model, cx)),
         (
@@ -186,17 +390,27 @@ pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
             ),
         ),
         ("Architecture", body(&cpu.architecture, cx)),
-        ("Virtualization", virt_value),
+        (
+            "Virtualization",
+            div().child(if virt.is_enabled() {
+                fact_tag(virt.label().to_string())
+            } else {
+                warn_tag(virt.label())
+            }),
+        ),
     ];
+    let details = filter_rows(details, &processor_detail_texts(snapshot), query);
     let mut groups = vec![group("Processor", list(details), cx)];
 
-    if cpu.per_core_frequency_mhz.is_empty() {
-        groups.push(group(
-            "Per-core frequency",
-            list(vec![("Readings", muted("No per-core readings", cx))]),
-            cx,
-        ));
-    } else {
+    let chart_matches = matches_query(query, "Per-core frequency")
+        || cpu
+            .per_core_frequency_mhz
+            .iter()
+            .enumerate()
+            .any(|(index, mhz)| {
+                matches_query(query, &format!("Core {index} {mhz} MHz"))
+            });
+    if !cpu.per_core_frequency_mhz.is_empty() && (query.trim().is_empty() || chart_matches) {
         let points = core_points(cpu);
         let chart = LineChart::new(points)
             .x(|point: &(String, f64)| point.0.clone())
@@ -224,14 +438,29 @@ pub fn processor(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
                         .child(div().h(px(180.)).w_full().child(chart)),
                 ),
         );
+    } else if cpu.per_core_frequency_mhz.is_empty() {
+        groups.push(group(
+            "Per-core frequency",
+            list(vec![("Readings", muted("No per-core readings", cx))]),
+            cx,
+        ));
     }
     groups
 }
 
+fn processor_detail_texts(snapshot: &SystemSnapshot) -> Vec<String> {
+    row_texts(Tab::Processor, snapshot, false)[..5].to_vec()
+}
+
 /// Memory: headline figures with neutral progress bars, plus the
 /// honest no-swap state instead of an empty row.
-pub fn memory(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+pub fn memory(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let mem = &snapshot.memory;
+    let ram_rows = vec![
+        ("Total", body(&format_bytes(mem.total_bytes), cx)),
+        ("Used", body(&format_bytes(mem.used_bytes), cx)),
+        ("Available", body(&format_bytes(mem.available_bytes), cx)),
+    ];
     let ram = div()
         .flex()
         .flex_col()
@@ -259,14 +488,16 @@ pub fn memory(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
             "memory-ram",
             mem.used_fraction() * 100.0,
         ))
-        .child(list(
-            vec![
-                ("Total", body(&format_bytes(mem.total_bytes), cx)),
-                ("Used", body(&format_bytes(mem.used_bytes), cx)),
-                ("Available", body(&format_bytes(mem.available_bytes), cx)),
-            ],
-        ));
+        .child(list(filter_rows(
+            ram_rows,
+            &row_texts(Tab::Memory, snapshot, false)[..3].to_vec(),
+            query,
+        )));
     let swap = if mem.has_swap() {
+        let swap_rows = vec![
+            ("Total", body(&format_bytes(mem.swap_total_bytes), cx)),
+            ("Used", body(&format_bytes(mem.swap_used_bytes), cx)),
+        ];
         div()
             .flex()
             .flex_col()
@@ -298,10 +529,11 @@ pub fn memory(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
                     mem.swap_used_bytes as f32 / mem.swap_total_bytes as f32 * 100.0
                 },
             ))
-            .child(list(vec![
-                ("Total", body(&format_bytes(mem.swap_total_bytes), cx)),
-                ("Used", body(&format_bytes(mem.swap_used_bytes), cx)),
-            ]))
+            .child(list(filter_rows(
+                swap_rows,
+                &row_texts(Tab::Memory, snapshot, false)[3..].to_vec(),
+                query,
+            )))
     } else {
         div().child(list(vec![("Swap", muted("No swap configured", cx))]))
     };
@@ -311,47 +543,25 @@ pub fn memory(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
     ]
 }
 
-/// Card wrapper for content richer than a plain description list.
-fn card_group(title: &'static str, content: Div, cx: &App) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(group_title(title, None, cx))
-        .child(
-            div()
-                .rounded(cx.theme().radius_lg)
-                .bg(cx.theme().secondary.opacity(0.45))
-                .border_1()
-                .border_color(cx.theme().border.opacity(0.7))
-                .p(px(16.))
-                .child(content),
-        )
-}
-
 /// Network: general facts plus the interfaces table. Only collected
 /// facts render — link type and Wi-Fi details have no collector, so
 /// they stay out rather than being invented.
-pub fn network(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
-    let connected = snapshot.network.iter().any(|iface| {
-        iface.state == sysinfo_viewer::data::InterfaceState::Up
-            && iface.name != "lo"
-            && iface.ip_address.is_some()
-    });
-    let status = div().child(if connected {
-        Tag::success().small().child("Connected".to_string())
-    } else {
-        Tag::secondary().small().child("Offline".to_string())
-    });
-    let mut groups = vec![group(
-        "General",
-        list(vec![
-            ("Hostname", mono(&snapshot.os.hostname, cx)),
-            ("Status", status),
-        ]),
-        cx,
-    )];
+pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
+    let general = vec![
+        ("Hostname", mono(&snapshot.os.hostname, cx)),
+        (
+            "Status",
+            div().child(if is_connected(snapshot) {
+                Tag::success().small().child("Connected".to_string())
+            } else {
+                Tag::secondary().small().child("Offline".to_string())
+            }),
+        ),
+    ];
+    let general = filter_rows(general, &row_texts(Tab::Network, snapshot, false)[..2].to_vec(), query);
+    let mut groups = vec![group("General", list(general), cx)];
 
+    let texts = row_texts(Tab::Network, snapshot, false);
     if snapshot.network.is_empty() {
         groups.push(group(
             "Interfaces",
@@ -370,8 +580,10 @@ pub fn network(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
         ],
         cx,
     ));
-    for iface in &snapshot.network {
-        rows = rows.child(interface_row(iface, cx));
+    for (iface, text) in snapshot.network.iter().zip(texts[2..].iter()) {
+        if matches_query(query, text) {
+            rows = rows.child(interface_row(iface, cx));
+        }
     }
     groups.push(
         div()
@@ -459,7 +671,7 @@ fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Di
 
 /// Storage: devices and partitions as a dense table with a neutral
 /// usage bar per device. Only collected facts render.
-pub fn storage(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     if snapshot.storage.is_empty() {
         return vec![group(
             "Devices",
@@ -467,6 +679,7 @@ pub fn storage(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
             cx,
         )];
     }
+    let texts = row_texts(Tab::Storage, snapshot, false);
     let mut rows = div().flex().flex_col().child(table_head(
         vec![
             ("Mount".to_string(), None),
@@ -474,8 +687,10 @@ pub fn storage(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
         ],
         cx,
     ));
-    for device in &snapshot.storage {
-        rows = rows.child(storage_row(device, cx));
+    for (device, text) in snapshot.storage.iter().zip(texts.iter()) {
+        if matches_query(query, text) {
+            rows = rows.child(storage_row(device, cx));
+        }
     }
     vec![div()
         .flex()
@@ -547,34 +762,138 @@ fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
         ))
 }
 
-/// Temporary honest state for tabs whose tickets have not landed yet.
-pub fn rebuilding(tab: Tab, cx: &App) -> AnyElement {
-    Empty::new()
-        .header(
+/// Graphics: one card per GPU with the measured VRAM amount, or an
+/// honest empty state naming the missing tool with a recovery action.
+pub fn graphics(
+    snapshot: &SystemSnapshot,
+    lspci_missing: bool,
+    empty_action: Option<AnyElement>,
+    query: &str,
+    cx: &App,
+) -> Vec<Div> {
+    if snapshot.gpus.is_empty() {
+        let mut empty = Empty::new().header(
             EmptyHeader::new()
-                .media(
-                    EmptyMedia::new().child(context_tile(
-                        tab.icon(),
-                        56.0,
-                        28.0,
-                        cx.theme().primary,
-                        white(),
-                    )),
+                .media(EmptyMedia::new().child(context_tile(
+                    Tab::Graphics.icon(),
+                    56.0,
+                    28.0,
+                    cx.theme().primary,
+                    white(),
+                )))
+                .title(EmptyTitle::new().child("No GPU details yet".to_string()))
+                .description(EmptyDescription::new().child(
+                    if lspci_missing {
+                        "lspci is not installed, so this tab cannot list GPUs. Install pciutils, then choose Refresh.".to_string()
+                    } else {
+                        "No GPUs were detected on this system.".to_string()
+                    },
+                )),
+        );
+        if let Some(action) = empty_action {
+            empty = empty.content(EmptyContent::new().child(action));
+        } else {
+            empty = empty.content(EmptyContent::new());
+        }
+        return vec![div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(group_title("Detected GPUs", None, cx))
+            .child(empty.into_any_element())];
+    }
+    let total = snapshot.memory.total_bytes;
+    let texts = row_texts(Tab::Graphics, snapshot, false);
+    let per_gpu = 3;
+    vec![div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(group_title(
+            "Detected GPUs",
+            Some(format!(
+                "{} {}",
+                snapshot.gpus.len(),
+                if snapshot.gpus.len() == 1 { "GPU" } else { "GPUs" }
+            )),
+            cx,
+        ))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .children(
+                    snapshot
+                        .gpus
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| {
+                            texts[index * per_gpu..(index + 1) * per_gpu]
+                                .iter()
+                                .any(|text| matches_query(query, text))
+                        })
+                        .map(|(_, gpu)| {
+                            div()
+                                .rounded(cx.theme().radius_lg)
+                                .bg(cx.theme().secondary.opacity(0.45))
+                                .border_1()
+                                .border_color(cx.theme().border.opacity(0.7))
+                                .child(list(
+                                    vec![
+                                        ("Model", body(&gpu.model, cx)),
+                                        (
+                                            "VRAM",
+                                            body(
+                                                &sysinfo_viewer::data::vram_label(&gpu.vram, total),
+                                                cx,
+                                            ),
+                                        ),
+                                        ("Driver", mono(&gpu.driver, cx)),
+                                    ],
+                                ))
+                        }),
                 )
-                .title(EmptyTitle::new().child(format!("{} isn't rebuilt yet", tab.label())))
-                .description(
-                    EmptyDescription::new().child(
-                        "This tab still runs on the old stack until its ticket lands.".to_string(),
-                    ),
-                ),
-        )
-        .content(EmptyContent::new())
-        .into_any_element()
+                .into_any_element(),
+        )]
+}
+
+/// Visible/total filterable rows for the toolbar count.
+pub fn count_matches(
+    tab: Tab,
+    snapshot: &SystemSnapshot,
+    serial_shown: bool,
+    query: &str,
+) -> (usize, usize) {
+    let texts = row_texts(tab, snapshot, serial_shown);
+    let visible = texts
+        .iter()
+        .filter(|text| matches_query(query, text))
+        .count();
+    (visible, texts.len())
+}
+
+/// Whether a tab has anything to show for a query: a matching row or a
+/// matching group title. Drives global-search auto-switch.
+pub fn tab_matches(tab: Tab, snapshot: &SystemSnapshot, serial_shown: bool, query: &str) -> bool {
+    let (visible, _) = count_matches(tab, snapshot, serial_shown, query);
+    visible > 0
+        || group_titles(tab)
+            .iter()
+            .any(|title| matches_query(query, title))
+}
+
+/// Per-core chart points in tab order for the Processor chart.
+pub fn core_points(cpu: &CpuInfo) -> Vec<(String, f64)> {
+    cpu.per_core_frequency_mhz
+        .iter()
+        .enumerate()
+        .map(|(index, mhz)| (format!("Core {index}"), *mhz as f64))
+        .collect()
 }
 
 /// Stat tags for the page header, per tab.
-pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot, cx: &App) -> Vec<Tag> {
-    let _ = cx;
+pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot) -> Vec<Tag> {
     match tab {
         Tab::Overview => vec![
             fact_tag(format!("hostname {}", snapshot.os.hostname)),
@@ -616,106 +935,10 @@ pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot, cx: &App) -> Vec<Tag> {
                 fact_tag(format!(
                     "{} · {}",
                     gpu.driver,
-                    sysinfo_viewer::data::vram_label(
-                        &gpu.vram,
-                        snapshot.memory.total_bytes
-                    )
+                    sysinfo_viewer::data::vram_label(&gpu.vram, snapshot.memory.total_bytes)
                 )),
             ],
             None => vec![fact_tag("No GPU detected".to_string())],
         },
     }
-}
-
-/// Per-core chart points in tab order for the Processor chart.
-pub fn core_points(cpu: &CpuInfo) -> Vec<(String, f64)> {
-    cpu.per_core_frequency_mhz
-        .iter()
-        .enumerate()
-        .map(|(index, mhz)| (format!("Core {index}"), *mhz as f64))
-        .collect()
-}
-
-/// Temporary honest state for tabs whose tickets have not landed yet.
-
-/// Graphics: one card per GPU with the measured VRAM amount, or an
-/// honest empty state naming the missing tool with a recovery action.
-pub fn graphics(
-    snapshot: &SystemSnapshot,
-    lspci_missing: bool,
-    empty_action: Option<AnyElement>,
-    cx: &App,
-) -> Vec<Div> {
-    if snapshot.gpus.is_empty() {
-        let mut empty = Empty::new().header(
-            EmptyHeader::new()
-                .media(EmptyMedia::new().child(context_tile(
-                    Tab::Graphics.icon(),
-                    56.0,
-                    28.0,
-                    cx.theme().primary,
-                    white(),
-                )))
-                .title(EmptyTitle::new().child("No GPU details yet".to_string()))
-                .description(EmptyDescription::new().child(
-                    if lspci_missing {
-                        "lspci is not installed, so this tab cannot list GPUs. Install pciutils, then choose Refresh.".to_string()
-                    } else {
-                        "No GPUs were detected on this system.".to_string()
-                    },
-                )),
-        );
-        if let Some(action) = empty_action {
-            empty = empty.content(EmptyContent::new().child(action));
-        } else {
-            empty = empty.content(EmptyContent::new());
-        }
-        return vec![div()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .child(group_title("Detected GPUs", None, cx))
-            .child(empty.into_any_element())];
-    }
-    let total = snapshot.memory.total_bytes;
-    vec![div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(group_title(
-            "Detected GPUs",
-            Some(format!(
-                "{} {}",
-                snapshot.gpus.len(),
-                if snapshot.gpus.len() == 1 { "GPU" } else { "GPUs" }
-            )),
-            cx,
-        ))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(12.))
-                .children(snapshot.gpus.iter().map(|gpu| {
-                    div()
-                        .rounded(cx.theme().radius_lg)
-                        .bg(cx.theme().secondary.opacity(0.45))
-                        .border_1()
-                        .border_color(cx.theme().border.opacity(0.7))
-                        .child(list(
-                            vec![
-                                ("Model", body(&gpu.model, cx)),
-                                (
-                                    "VRAM",
-                                    body(
-                                        &sysinfo_viewer::data::vram_label(&gpu.vram, total),
-                                        cx,
-                                    ),
-                                ),
-                                ("Driver", mono(&gpu.driver, cx)),
-                            ],
-                        ))
-                }))
-                .into_any_element(),
-        )]
 }

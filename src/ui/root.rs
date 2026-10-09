@@ -6,19 +6,21 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::sidebar::Sidebar;
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt};
 use gpui_kit::prelude::*;
 use gpui_kit::{
-    div, px, ClipboardItem, Context, Div, Entity, FocusHandle, Render, Styled, Window,
+    div, px, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable, Keystroke, Render,
+    Styled, Subscription, Window,
 };
-
 use super::dialogs;
-use super::library::{header_tile, notice_row};
+use super::library::{header_tile, notice_row, small_icon};
+use super::{views, FocusSearch};
 use super::sidebar::{brand, NavItem, SIDEBAR_WIDTH};
-use super::views;
 use crate::tab::{Tab, TABS};
 use crate::theme;
 use sysinfo_viewer::data::{serial_number, SystemSnapshot};
@@ -31,17 +33,32 @@ pub struct RootView {
     snapshot: SystemSnapshot,
     serial_shown: bool,
     lspci_missing: bool,
+    search: Entity<InputState>,
+    query: String,
+    slash: Kbd,
+    _search_subscription: Subscription,
 }
 
 impl RootView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, initial: Option<Tab>) -> Self {
-        let _ = window;
+        let search = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Search details")
+        });
+        let _search_subscription = cx.subscribe(&search, |this: &mut Self, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.on_search_changed(cx);
+            }
+        });
         Self {
             focus: cx.focus_handle(),
             tab: initial.unwrap_or(Tab::Overview),
             snapshot: SystemSnapshot::collect(),
             serial_shown: false,
             lspci_missing: lspci_missing(),
+            search,
+            query: String::new(),
+            slash: Kbd::new(Keystroke::parse("/").expect("slash keystroke parses")),
+            _search_subscription,
         }
     }
 
@@ -61,6 +78,35 @@ impl RootView {
         cx.notify();
     }
 
+    /// Mirrors the input into the query and auto-switches to the first
+    /// tab with a match when the current tab has none.
+    fn on_search_changed(&mut self, cx: &mut Context<Self>) {
+        let query = self.search.read(cx).value().to_string();
+        if query == self.query {
+            return;
+        }
+        self.query = query.clone();
+        if !query.trim().is_empty() {
+            let (visible, _) = views::count_matches(self.tab, &self.snapshot, self.serial_shown, &query);
+            if visible == 0 {
+                for tab in TABS {
+                    if tab != self.tab
+                        && views::tab_matches(tab, &self.snapshot, self.serial_shown, &query)
+                    {
+                        self.tab = tab;
+                        break;
+                    }
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let handle = self.search.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+    }
+
     fn subtitle(&self) -> String {
         match self.tab {
             Tab::Overview => format!("{} · {}", self.snapshot.os.hostname, self.snapshot.os.distro),
@@ -76,7 +122,7 @@ impl RootView {
     }
 
     fn header(&self, view: &Entity<Self>, _window: &mut Window, cx: &mut Context<Self>) -> Div {
-        let stats = views::header_stats(self.tab, &self.snapshot, cx);
+        let stats = views::header_stats(self.tab, &self.snapshot);
         let mut actions = div().flex().items_center().gap(px(8.));
         actions = actions.child(
             Button::new("header-refresh")
@@ -194,19 +240,40 @@ impl RootView {
                     .child(div().w(px(36.)).flex().justify_center().child(theme_toggle)),
             )
     }
-
-    fn toolbar(&self, cx: &mut Context<Self>) -> Div {        div()
+    fn toolbar(&self, cx: &mut Context<Self>) -> Div {
+        let mut heading = div()
+            .flex()
+            .items_baseline()
+            .gap(px(6.))
+            .text_base()
+            .font_semibold()
+            .text_color(cx.theme().foreground)
+            .child(self.toolbar_title());
+        if !self.query.trim().is_empty() {
+            let (visible, total) =
+                views::count_matches(self.tab, &self.snapshot, self.serial_shown, &self.query);
+            heading = heading.child(
+                div()
+                    .text_xs()
+                    .font_normal()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("{visible} of {total}")),
+            );
+        }
+        div()
             .flex()
             .items_center()
             .gap(px(10.))
-            .child(
-                div()
-                    .text_base()
-                    .font_semibold()
-                    .text_color(cx.theme().foreground)
-                    .child(self.toolbar_title()),
-            )
+            .child(heading)
             .child(div().flex_1())
+            .child(
+                div().w(px(240.)).child(
+                    Input::new(&self.search)
+                        .prefix(small_icon(IconName::Search, cx))
+                        .suffix(self.slash.clone())
+                        .cleanable(true),
+                ),
+            )
     }
 
     fn notice(&self, view: &Entity<Self>, cx: &mut Context<Self>) -> Option<Div> {
@@ -240,6 +307,7 @@ impl RootView {
     }
 
     fn body(&self, cx: &mut Context<Self>) -> Div {
+        let query = self.query.clone();
         let content: Div = match self.tab {
             Tab::Overview => {
                 let toggle = match serial_number() {
@@ -268,6 +336,7 @@ impl RootView {
                         serial_number(),
                         self.serial_shown,
                         toggle,
+                        &query,
                         cx,
                     ))
             }
@@ -275,22 +344,22 @@ impl RootView {
                 .flex()
                 .flex_col()
                 .gap(px(20.))
-                .children(views::processor(&self.snapshot, cx)),
+                .children(views::processor(&self.snapshot, &query, cx)),
             Tab::Memory => div()
                 .flex()
                 .flex_col()
                 .gap(px(20.))
-                .children(views::memory(&self.snapshot, cx)),
+                .children(views::memory(&self.snapshot, &query, cx)),
             Tab::Network => div()
                 .flex()
                 .flex_col()
                 .gap(px(20.))
-                .children(views::network(&self.snapshot, cx)),
+                .children(views::network(&self.snapshot, &query, cx)),
             Tab::Storage => div()
                 .flex()
                 .flex_col()
                 .gap(px(20.))
-                .children(views::storage(&self.snapshot, cx)),
+                .children(views::storage(&self.snapshot, &query, cx)),
             Tab::Graphics => {
                 let action = {
                     let view = cx.entity();
@@ -311,14 +380,15 @@ impl RootView {
                         .into_any_element()
                 };
                 div().flex().flex_col().gap(px(20.)).children(
-                    views::graphics(&self.snapshot, self.lspci_missing, Some(action), cx),
+                    views::graphics(
+                        &self.snapshot,
+                        self.lspci_missing,
+                        Some(action),
+                        &query,
+                        cx,
+                    ),
                 )
             }
-            _ => div()
-                .flex()
-                .flex_col()
-                .gap(px(20.))
-                .child(views::rebuilding(self.tab, cx)),
         };
         div().flex().flex_col().flex_1().min_h_0().child(content)
     }
@@ -382,6 +452,9 @@ impl Render for RootView {
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus)
             .key_context(KEY_CONTEXT)
+            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.focus_search(window, cx);
+            }))
             .child(self.sidebar(&view, cx))
             .child(
                 div()
