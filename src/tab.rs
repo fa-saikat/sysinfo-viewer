@@ -59,6 +59,19 @@ impl Tab {
         }
     }
 
+    /// Stable slug identifying the tab outside the UI layer: search
+    /// inventory, launch switches and tests all key off this string.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Tab::Overview => "overview",
+            Tab::Processor => "processor",
+            Tab::Memory => "memory",
+            Tab::Network => "network",
+            Tab::Storage => "storage",
+            Tab::Graphics => "graphics",
+        }
+    }
+
     /// Parses the `SYSINFO_TAB` launch switch used by the test harness's
     /// screenshot script. Accepts the tab label plus a few short aliases;
     /// anything else is `None` and the app opens on Overview as usual.

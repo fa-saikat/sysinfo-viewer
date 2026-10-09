@@ -34,5 +34,4 @@ assets = [
     ["target/release/sysinfo-viewer", "usr/bin/", "755"],
     ["assets/sysinfo-viewer.svg", "usr/share/icons/hicolor/256x256/apps/sysinfo-viewer.svg", "644"],
     ["packaging/sysinfo-viewer.desktop", "usr/share/applications/sysinfo-viewer.desktop", "644"],
-    ["assets/backgrounds/*", "usr/share/sysinfo-viewer/assets/backgrounds/", "644"],
 ]

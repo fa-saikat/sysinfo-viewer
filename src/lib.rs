@@ -6,3 +6,4 @@
 //! snapshot shape the UI renders.
 
 pub mod data;
+pub mod search;

@@ -22,6 +22,7 @@ use sysinfo_viewer::data::{
     format_bytes, format_frequency_mhz, CpuInfo, GpuInfo, InterfaceState, MemoryInfo,
     NetworkInterface, OsInfo, StorageDevice, SystemSnapshot, Virtualization, VramSize,
 };
+use sysinfo_viewer::search::{count_matches, matches_query, tab_matches};
 
 static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -251,6 +252,50 @@ fn stubbed_discrete_gpus_resolve_dedicated_vram() {
         .find(|g| g.driver == "nvidia")
         .expect("NVIDIA GPU parsed");
     assert!(matches!(nvidia.vram, VramSize::Dedicated(4294967296)));
+}
+
+#[test]
+fn search_inventory_counts_and_switches() {
+    let fixture = Fixture::new("search");
+    fixture.write("proc/cpuinfo", CPUINFO_VMX);
+    fixture.stub("lspci", LSPCI_INTEL);
+    let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+
+    let snapshot = SystemSnapshot::collect();
+
+    // An empty query matches every row of every tab.
+    for tab in [
+        "overview",
+        "processor",
+        "memory",
+        "network",
+        "storage",
+        "graphics",
+    ] {
+        let (visible, total) = count_matches(tab, &snapshot, false, "");
+        assert!(total > 0, "row inventory for {tab}");
+        assert_eq!(visible, total, "empty query shows all {tab} rows");
+    }
+
+    // A nonsense query matches nothing and switches nothing.
+    let (visible, _) = count_matches("storage", &snapshot, false, "zzz-no-such-row");
+    assert_eq!(visible, 0);
+    assert!(!tab_matches("storage", &snapshot, false, "zzz-no-such-row"));
+
+    // Every mount path contains '/', so it matches every storage row.
+    if !snapshot.storage.is_empty() {
+        let (visible, total) = count_matches("storage", &snapshot, false, "/");
+        assert_eq!(visible, total);
+    }
+
+    // The live hostname always keeps Overview, case-insensitively.
+    assert!(tab_matches(
+        "overview",
+        &snapshot,
+        false,
+        &snapshot.os.hostname.to_uppercase()
+    ));
+    assert!(matches_query("SHOPNO", "shopno"));
 }
 
 #[test]

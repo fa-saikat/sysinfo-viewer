@@ -20,6 +20,7 @@ use gpui_kit::{
 use super::dialogs;
 use super::library::{header_tile, notice_row, small_icon};
 use super::{views, FocusSearch};
+use sysinfo_viewer::search::{count_matches, tab_matches};
 use super::sidebar::{brand, NavItem, SIDEBAR_WIDTH};
 use crate::tab::{Tab, TABS};
 use crate::theme;
@@ -87,11 +88,12 @@ impl RootView {
         }
         self.query = query.clone();
         if !query.trim().is_empty() {
-            let (visible, _) = views::count_matches(self.tab, &self.snapshot, self.serial_shown, &query);
+            let (visible, _) =
+                count_matches(self.tab.slug(), &self.snapshot, self.serial_shown, &query);
             if visible == 0 {
                 for tab in TABS {
                     if tab != self.tab
-                        && views::tab_matches(tab, &self.snapshot, self.serial_shown, &query)
+                        && tab_matches(tab.slug(), &self.snapshot, self.serial_shown, &query)
                     {
                         self.tab = tab;
                         break;
@@ -205,12 +207,13 @@ impl RootView {
                 view: view.clone(),
             });
         }
+        let distro = self.snapshot.os.distro.clone();
         let about = Button::new("footer-about")
             .ghost()
             .small()
             .label("About")
             .icon(IconName::Info)
-            .on_click(|_, window, cx| dialogs::show_about(window, cx));
+            .on_click(move |_, window, cx| dialogs::show_about(window, cx, distro.clone()));
         let theme_icon = if theme::is_dark(cx) {
             IconName::Moon
         } else {
@@ -251,7 +254,7 @@ impl RootView {
             .child(self.toolbar_title());
         if !self.query.trim().is_empty() {
             let (visible, total) =
-                views::count_matches(self.tab, &self.snapshot, self.serial_shown, &self.query);
+                count_matches(self.tab.slug(), &self.snapshot, self.serial_shown, &self.query);
             heading = heading.child(
                 div()
                     .text_xs()

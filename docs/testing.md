@@ -26,6 +26,8 @@ Shelf rebuild extends it instead of inventing its own.
 
 ## Screenshots
 
-`scripts/capture.sh` walks every tab via `SYSINFO_TAB` and stores
-baselines under `design/screenshots/`. Needs a display (or
-`xvfb-run`); the light-theme dimension arrives with the theme module.
+`scripts/capture.sh` walks every tab in both themes via `SYSINFO_TAB`
+and `SYSINFO_THEME` and stores baselines under `design/screenshots/`.
+Needs a display (or `xvfb-run`). Review the full matrix before calling
+a screen done; any pixel or copy drift against the mockup fails the
+pass.
