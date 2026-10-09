@@ -107,10 +107,11 @@ fn max_frequency_from_sysfs() -> Option<u64> {
     Some(khz / 1000)
 }
 
-/// Cache tree from `/sys/devices/system/cpu/cpu*/cache/index*`: each
-/// index carries its level, size and the set of CPUs sharing it.
-/// Deduplicated on all three so a package-wide L3 appears once no matter
-/// how many cores were scanned. Routed through the fixture root in tests.
+/// Cache tree from `/sys/devices/system/cpu/cpu*/cache/index*`. Scans
+/// every CPU but deduplicates on (level, size): a package-wide L3 is
+/// identical under each core, and per-core L1/L2 repeat at the same size,
+/// so each distinct level+size appears once. Routed through the fixture
+/// root in tests.
 fn detect_cache() -> Vec<CacheInfo> {
     let mut seen = std::collections::HashSet::new();
     let mut cache = Vec::new();
@@ -120,10 +121,9 @@ fn detect_cache() -> Vec<CacheInfo> {
             let base = fixture::sys_path(&format!(
                 "/sys/devices/system/cpu/cpu{cpu}/cache/index{index}"
             ));
-            let (Some(level), Some(size), shared) = (
+            let (Some(level), Some(size)) = (
                 read_small(&base.join("level")),
                 read_small(&base.join("size")),
-                fs::read_to_string(base.join("shared_cpu_list")).unwrap_or_default(),
             ) else {
                 continue;
             };
@@ -135,7 +135,7 @@ fn detect_cache() -> Vec<CacheInfo> {
             let Some(size_bytes) = parse_cache_size(size.trim()) else {
                 continue;
             };
-            if seen.insert((level, size_bytes, shared.trim().to_string())) {
+            if seen.insert((level, size_bytes)) {
                 cache.push(CacheInfo { level, size_bytes });
             }
         }

@@ -171,6 +171,20 @@ fn normal_fixture_collects_every_tab_end_to_end() {
         "sys/devices/system/cpu/cpu0/cache/index3/shared_cpu_list",
         "0-11\n",
     );
+    // A second core repeats its private caches and shares the L3: the
+    // collector must still report each level once.
+    fixture.write("sys/devices/system/cpu/cpu1/cache/index0/level", "1\n");
+    fixture.write("sys/devices/system/cpu/cpu1/cache/index0/size", "32K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu1/cache/index0/shared_cpu_list",
+        "1\n",
+    );
+    fixture.write("sys/devices/system/cpu/cpu1/cache/index3/level", "3\n");
+    fixture.write("sys/devices/system/cpu/cpu1/cache/index3/size", "16384K\n");
+    fixture.write(
+        "sys/devices/system/cpu/cpu1/cache/index3/shared_cpu_list",
+        "0-11\n",
+    );
     fixture.stub("lspci", LSPCI_INTEL);
     let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
 
@@ -203,6 +217,7 @@ fn normal_fixture_collects_every_tab_end_to_end() {
         .expect("shared L3 from the fixture tree");
     assert_eq!(l3.size_bytes, 16 * 1024 * 1024);
     assert!(snapshot.cpu.cache.windows(2).all(|pair| pair[0].level <= pair[1].level));
+    assert_eq!(snapshot.cpu.cache.len(), 3, "L1, L2 and L3 exactly once");
 
     // Memory inputs: figures plus the bar fractions.
     assert!(snapshot.memory.total_bytes > 0);

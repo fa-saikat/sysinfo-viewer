@@ -232,7 +232,7 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         ("Architecture", body(&cpu.architecture, cx)),
         (
             "Virtualization",
-            div().child(if virt.is_enabled() {
+            hug(if virt.is_enabled() {
                 state_badge(virt.label().to_string(), BadgeTone::Good, cx)
             } else {
                 state_badge(virt.label().to_string(), BadgeTone::Bad, cx)
@@ -240,17 +240,11 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         ),
     ];
     if !cpu.cache.is_empty() {
-        details.push((
-            "Cache",
-            body(
-                &cpu.cache
-                    .iter()
-                    .map(|entry| entry.label())
-                    .collect::<Vec<_>>()
-                    .join(" · "),
-                cx,
-            ),
-        ));
+        // The facts row shows the last-level cache only; the full tree
+        // stays in the snapshot for later use.
+        if let Some(l3) = cpu.cache.iter().find(|entry| entry.level == 3) {
+            details.push(("Cache", body(&l3.label(), cx)));
+        }
     }
     let details = filter_rows(details, &processor_detail_texts(snapshot), query);
     let mut groups = vec![group("Processor", list(details, cx), cx)];
@@ -499,13 +493,13 @@ fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
 
 fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Div {
     use sysinfo_viewer::data::InterfaceState;
-    let state = match iface.state {
+    let state = hug(match iface.state {
         InterfaceState::Up => state_badge("Up".to_string(), BadgeTone::Good, cx),
         InterfaceState::Down => state_badge("Down".to_string(), BadgeTone::Bad, cx),
-        InterfaceState::Unknown => hug(div().child(
-            Tag::secondary().small().child("Unknown".to_string()),
-        )),
-    };
+        InterfaceState::Unknown => {
+            div().child(Tag::secondary().small().child("Unknown".to_string()))
+        }
+    });
     let mac = if iface.mac_address.is_empty() {
         muted("—", cx)
     } else {

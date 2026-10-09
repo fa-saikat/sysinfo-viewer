@@ -105,15 +105,8 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 text("Architecture", &cpu.architecture),
                 text("Virtualization", cpu.virtualization.label()),
             ];
-            if !cpu.cache.is_empty() {
-                rows.push(text(
-                    "Cache",
-                    &cpu.cache
-                        .iter()
-                        .map(|entry| entry.label())
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                ));
+            if let Some(l3) = cpu.cache.iter().find(|entry| entry.level == 3) {
+                rows.push(text("Cache", &l3.label()));
             }
             rows.extend(
                 cpu.per_core_frequency_mhz

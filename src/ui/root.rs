@@ -146,7 +146,7 @@ impl RootView {
                 }),
         );
         if self.tab == Tab::Overview {
-            let report = overview_report(&self.snapshot, serial_number());
+            let report = overview_report(&self.snapshot, self.serial_shown);
             actions = actions.child(
                 Button::new("header-copy")
                     .primary()
@@ -402,64 +402,64 @@ impl RootView {
     }
 }
 
-/// The Overview copy target: plain facts, one per line, across every
-/// tab. The serial goes out as collected — copying is an explicit act,
-/// and a details report without it is incomplete.
-fn overview_report(snapshot: &SystemSnapshot, serial: Option<String>) -> String {
-    use sysinfo_viewer::data::{format_bytes, vram_label};
-    let mut lines = vec![
-        format!("Distribution: {}", snapshot.os.distro),
-        format!("Kernel: {}", snapshot.os.kernel_version),
-        format!("Hostname: {}", snapshot.os.hostname),
-        format!("Uptime: {}", snapshot.os.uptime),
-        format!(
-            "Processor: {} ({} threads)",
-            snapshot.cpu.model, snapshot.cpu.logical_threads
+/// The Copy details target: exactly what the Overview page shows, one
+/// `Label: value` line per row. The serial goes out as displayed —
+/// masked unless revealed — because the button copies the page.
+fn overview_report(snapshot: &SystemSnapshot, serial_shown: bool) -> String {
+    use sysinfo_viewer::data::{
+        format_bytes, format_frequency_mhz, product_name, serial_number,
+    };
+    let cpu = &snapshot.cpu;
+    let max_freq = cpu
+        .max_frequency_mhz
+        .map(format_frequency_mhz)
+        .unwrap_or_else(|| "Unknown".to_string());
+    let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
+    let serial = match serial_number() {
+        Some(number) if serial_shown => number,
+        Some(_) => "••••••••••".to_string(),
+        None => "Unknown".to_string(),
+    };
+    [
+        (
+            "Model",
+            product_name().unwrap_or_else(|| "Unknown".to_string()),
         ),
-        format!(
-            "Memory: {} used of {}",
-            format_bytes(snapshot.memory.used_bytes),
-            format_bytes(snapshot.memory.total_bytes)
+        (
+            "Processor",
+            format!(
+                "{} · {} threads · {}",
+                cpu.model, cpu.logical_threads, max_freq
+            ),
         ),
-    ];
-    match snapshot.gpus.first() {
-        Some(gpu) => lines.push(format!(
-            "Graphics: {} ({}; {})",
-            gpu.model,
-            vram_label(&gpu.vram, snapshot.memory.total_bytes),
-            gpu.driver
-        )),
-        None => lines.push("Graphics: No GPU detected".to_string()),
-    }
-    if snapshot.storage.is_empty() {
-        lines.push("Storage: No mounted devices".to_string());
-    } else {
-        for device in &snapshot.storage {
-            lines.push(format!(
-                "Storage {}: {} used of {} ({})",
-                device.mount_point,
-                format_bytes(device.used_bytes()),
-                format_bytes(device.total_bytes),
-                device.filesystem
-            ));
-        }
-    }
-    if snapshot.network.is_empty() {
-        lines.push("Network: No interfaces found".to_string());
-    } else {
-        for iface in &snapshot.network {
-            lines.push(format!(
-                "Network {}: {} ({})",
-                iface.name,
-                iface.ip_address.as_deref().unwrap_or("no address"),
-                iface.state.label()
-            ));
-        }
-    }
-    if let Some(number) = serial {
-        lines.push(format!("Serial number: {number}"));
-    }
-    lines.join("\n")
+        ("Memory", format_bytes(snapshot.memory.total_bytes)),
+        (
+            "Graphics",
+            snapshot
+                .gpus
+                .first()
+                .map(|gpu| gpu.model.clone())
+                .unwrap_or_else(|| "No GPU detected".to_string()),
+        ),
+        (
+            "Storage",
+            if storage_total > 0 {
+                format_bytes(storage_total)
+            } else {
+                "No mounted devices".to_string()
+            },
+        ),
+        ("Serial number", serial),
+        ("Distribution", snapshot.os.distro.clone()),
+        ("Kernel", snapshot.os.kernel_version.clone()),
+        ("Architecture", snapshot.cpu.architecture.clone()),
+        ("Hostname", snapshot.os.hostname.clone()),
+        ("Uptime", snapshot.os.uptime.clone()),
+    ]
+    .into_iter()
+    .map(|(label, value)| format!("{label}: {value}"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// `lspci` absence is the one external-tool state with UI consequences
