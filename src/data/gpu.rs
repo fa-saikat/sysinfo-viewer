@@ -35,6 +35,18 @@ pub struct GpuInfo {
     pub pci_bus_id: String,
 }
 
+/// Display form for a VRAM size. Integrated GPUs share system RAM, so the
+/// honest amount beside "Shared" is the pool it is shared with: total
+/// system memory, measured by the caller — never a placeholder.
+pub fn vram_label(vram: &VramSize, system_total_bytes: u64) -> String {
+    use super::format_bytes;
+    match vram {
+        VramSize::Dedicated(bytes) => format_bytes(*bytes),
+        VramSize::Shared => format!("{} (Shared)", format_bytes(system_total_bytes)),
+        VramSize::Unknown => "Unknown".to_string(),
+    }
+}
+
 pub fn collect() -> Vec<GpuInfo> {
     let Some(lspci_output) = run(&["lspci", "-k"]) else {
         return Vec::new();
@@ -196,8 +208,20 @@ mod tests {
     }
 
     #[test]
-    fn strips_revision_suffix_only() {
+    fn vram_label_names_the_shared_pool() {
         assert_eq!(
+            vram_label(&VramSize::Dedicated(8589934592), 0),
+            "8.0 GB".to_string()
+        );
+        assert_eq!(
+            vram_label(&VramSize::Shared, 30_7 * 1024 * 1024 * 1024 / 10),
+            "30.7 GB (Shared)".to_string()
+        );
+        assert_eq!(vram_label(&VramSize::Unknown, 0), "Unknown".to_string());
+    }
+
+    #[test]
+    fn strips_revision_suffix_only() {        assert_eq!(
             strip_revision_suffix("UHD Graphics 620 (rev 07)"),
             "UHD Graphics 620"
         );

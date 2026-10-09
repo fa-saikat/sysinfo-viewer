@@ -16,7 +16,7 @@ use gpui_kit::{
 };
 
 use super::dialogs;
-use super::library::header_tile;
+use super::library::{header_tile, notice_row};
 use super::sidebar::{brand, NavItem, SIDEBAR_WIDTH};
 use super::views;
 use crate::tab::{Tab, TABS};
@@ -195,8 +195,7 @@ impl RootView {
             )
     }
 
-    fn toolbar(&self, cx: &mut Context<Self>) -> Div {
-        div()
+    fn toolbar(&self, cx: &mut Context<Self>) -> Div {        div()
             .flex()
             .items_center()
             .gap(px(10.))
@@ -208,6 +207,36 @@ impl RootView {
                     .child(self.toolbar_title()),
             )
             .child(div().flex_1())
+    }
+
+    fn notice(&self, view: &Entity<Self>, cx: &mut Context<Self>) -> Option<Div> {
+        if !self.lspci_missing {
+            return None;
+        }
+        let action = Button::new("notice-refresh")
+            .primary()
+            .small()
+            .label("Refresh")
+            .on_click({
+                let view = view.clone();
+                move |_, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.refresh(cx);
+                        window.push_notification(
+                            Notification::success("Tools re-detected just now").title("Refreshed"),
+                            cx,
+                        );
+                    });
+                }
+            });
+        Some(notice_row(
+            IconName::TriangleAlert,
+            cx.theme().warning,
+            "Some details need lspci",
+            "Install pciutils, then choose Refresh to detect GPUs.".to_string(),
+            div().child(action),
+            cx,
+        ))
     }
 
     fn body(&self, cx: &mut Context<Self>) -> Div {
@@ -262,6 +291,29 @@ impl RootView {
                 .flex_col()
                 .gap(px(20.))
                 .children(views::storage(&self.snapshot, cx)),
+            Tab::Graphics => {
+                let action = {
+                    let view = cx.entity();
+                    Button::new("empty-refresh")
+                        .primary()
+                        .small()
+                        .label("Refresh")
+                        .on_click(move |_, window, cx| {
+                            view.update(cx, |this, cx| {
+                                this.refresh(cx);
+                                window.push_notification(
+                                    Notification::success("Tools re-detected just now")
+                                        .title("Refreshed"),
+                                    cx,
+                                );
+                            });
+                        })
+                        .into_any_element()
+                };
+                div().flex().flex_col().gap(px(20.)).children(
+                    views::graphics(&self.snapshot, self.lspci_missing, Some(action), cx),
+                )
+            }
             _ => div()
                 .flex()
                 .flex_col()
@@ -308,6 +360,21 @@ fn lspci_missing() -> bool {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
+        let mut below_header = div().flex().flex_col().gap(px(18.)).mt(px(18.));
+        if let Some(notice) = self.notice(&view, cx) {
+            below_header = below_header.child(notice);
+        }
+        below_header = below_header
+            .child(self.toolbar(cx))
+            .child(
+                div()
+                    .id("content")
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .overflow_y_scrollbar()
+                    .child(self.body(cx)),
+            );
         div()
             .flex()
             .size_full()
@@ -325,23 +392,7 @@ impl Render for RootView {
                     .min_w_0()
                     .p(px(24.))
                     .child(self.header(&view, window, cx))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(18.))
-                            .mt(px(18.))
-                            .child(self.toolbar(cx))
-                            .child(
-                                div()
-                                    .id("content")
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .overflow_y_scrollbar()
-                                    .child(self.body(cx)),
-                            ),
-                    ),
+                    .child(below_header),
             )
     }
 }

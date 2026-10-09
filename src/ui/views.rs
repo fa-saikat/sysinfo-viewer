@@ -613,28 +613,109 @@ pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot, cx: &App) -> Vec<Tag> {
         Tab::Graphics => match snapshot.gpus.first() {
             Some(gpu) => vec![
                 fact_tag(gpu.model.clone()),
-                fact_tag(format!("{} · {}", gpu.driver, vram_short(&gpu.vram))),
+                fact_tag(format!(
+                    "{} · {}",
+                    gpu.driver,
+                    sysinfo_viewer::data::vram_label(
+                        &gpu.vram,
+                        snapshot.memory.total_bytes
+                    )
+                )),
             ],
             None => vec![fact_tag("No GPU detected".to_string())],
         },
     }
 }
 
-fn vram_short(vram: &sysinfo_viewer::data::VramSize) -> String {
-    use sysinfo_viewer::data::VramSize;
-    match vram {
-        VramSize::Dedicated(bytes) => format_bytes(*bytes),
-        VramSize::Shared => "Shared".to_string(),
-        VramSize::Unknown => "Unknown".to_string(),
-    }
-}
-
-/// Per-core chart points in tab order for the Processor ticket.
-#[allow(dead_code)]
+/// Per-core chart points in tab order for the Processor chart.
 pub fn core_points(cpu: &CpuInfo) -> Vec<(String, f64)> {
     cpu.per_core_frequency_mhz
         .iter()
         .enumerate()
         .map(|(index, mhz)| (format!("Core {index}"), *mhz as f64))
         .collect()
+}
+
+/// Temporary honest state for tabs whose tickets have not landed yet.
+
+/// Graphics: one card per GPU with the measured VRAM amount, or an
+/// honest empty state naming the missing tool with a recovery action.
+pub fn graphics(
+    snapshot: &SystemSnapshot,
+    lspci_missing: bool,
+    empty_action: Option<AnyElement>,
+    cx: &App,
+) -> Vec<Div> {
+    if snapshot.gpus.is_empty() {
+        let mut empty = Empty::new().header(
+            EmptyHeader::new()
+                .media(EmptyMedia::new().child(context_tile(
+                    Tab::Graphics.icon(),
+                    56.0,
+                    28.0,
+                    cx.theme().primary,
+                    white(),
+                )))
+                .title(EmptyTitle::new().child("No GPU details yet".to_string()))
+                .description(EmptyDescription::new().child(
+                    if lspci_missing {
+                        "lspci is not installed, so this tab cannot list GPUs. Install pciutils, then choose Refresh.".to_string()
+                    } else {
+                        "No GPUs were detected on this system.".to_string()
+                    },
+                )),
+        );
+        if let Some(action) = empty_action {
+            empty = empty.content(EmptyContent::new().child(action));
+        } else {
+            empty = empty.content(EmptyContent::new());
+        }
+        return vec![div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(group_title("Detected GPUs", None, cx))
+            .child(empty.into_any_element())];
+    }
+    let total = snapshot.memory.total_bytes;
+    vec![div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(group_title(
+            "Detected GPUs",
+            Some(format!(
+                "{} {}",
+                snapshot.gpus.len(),
+                if snapshot.gpus.len() == 1 { "GPU" } else { "GPUs" }
+            )),
+            cx,
+        ))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .children(snapshot.gpus.iter().map(|gpu| {
+                    div()
+                        .rounded(cx.theme().radius_lg)
+                        .bg(cx.theme().secondary.opacity(0.45))
+                        .border_1()
+                        .border_color(cx.theme().border.opacity(0.7))
+                        .child(list(
+                            vec![
+                                ("Model", body(&gpu.model, cx)),
+                                (
+                                    "VRAM",
+                                    body(
+                                        &sysinfo_viewer::data::vram_label(&gpu.vram, total),
+                                        cx,
+                                    ),
+                                ),
+                                ("Driver", mono(&gpu.driver, cx)),
+                            ],
+                        ))
+                }))
+                .into_any_element(),
+        )]
 }

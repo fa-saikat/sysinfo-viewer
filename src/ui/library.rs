@@ -66,7 +66,6 @@ pub fn notice(id: &'static str, lead: &'static str, body: String) -> Alert {
 /// Notice with an action slot: 28 tone tile, lead line, one sentence,
 /// and the caller's button on the right. `tone` is the accent for
 /// "you can improve this", `warning` for "something is missing".
-#[allow(dead_code)]
 pub fn notice_row(
     icon: IconName,
     tone: Hsla,

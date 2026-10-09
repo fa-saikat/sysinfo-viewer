@@ -17,7 +17,7 @@ mod os;
 mod storage;
 
 pub use cpu::{CpuInfo, Virtualization};
-pub use gpu::{GpuInfo, VramSize};
+pub use gpu::{vram_label, GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
 pub use os::{product_name, serial_number, OsInfo};
