@@ -20,7 +20,7 @@ pub use cpu::{CpuInfo, Virtualization};
 pub use gpu::{GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
-pub use os::OsInfo;
+pub use os::{product_name, serial_number, OsInfo};
 pub use storage::StorageDevice;
 
 use std::time::Instant;

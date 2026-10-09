@@ -6,18 +6,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-
-# NOTE: point these at whatever your welcome app's Cargo.toml uses — that
-# project didn't come with its manifest attached, so these are placeholders.
-# If the welcome app pulls gpui/gpui_platform from a git dependency (the Zed
-# repo, a vendored fork, a workspace path, etc.) mirror the exact same
-# source + rev here so both apps build against one consistent GPUI version.
-gpui = { git = "https://github.com/zed-industries/zed" }
-# `gpui_linux` panics at startup ("At least one of the wayland or x11
-# features must be enabled") unless a backend feature is turned on here.
-# Match whatever your welcome app's Cargo.toml already enables — if it
-# only ships one of the two, use that one instead of both.
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["x11", "wayland"] }
+# Shelf stack: pins the exact GPUI snapshot the whole ShopnoOS suite
+# builds against; bump this one line to move the suite together.
+gpui-kit = "=0.7.1"
 
 # System info collection.
 sysinfo = "0.31"
