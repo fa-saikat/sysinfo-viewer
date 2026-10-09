@@ -8,7 +8,6 @@
 
 mod app;
 mod colors;
-mod data;
 mod tab;
 
 use std::borrow::Cow;
@@ -21,7 +20,7 @@ use gpui::{
 };
 
 use app::SysInfoApp;
-use tab::BackgroundAvailability;
+use tab::{BackgroundAvailability, Tab};
 
 // ---------------------------------------------------------------------
 // Assets — identical strategy to the welcome app: read from an
@@ -90,6 +89,12 @@ fn main() {
     // Resolved once, up front, against the same root FsAssets reads from
     // — see `tab::BackgroundAvailability` for why.
     let background_availability = BackgroundAvailability::probe(&assets.root);
+    // Harness launch switch (see docs/testing.md): opens on the named tab
+    // so the screenshot script can capture every tab unattended. Unset or
+    // unparsable values open on Overview, exactly as before.
+    let initial_tab = std::env::var("SYSINFO_TAB")
+        .ok()
+        .and_then(|slug| Tab::from_slug(&slug));
 
     gpui_platform::application()
     .with_assets(assets)
@@ -106,7 +111,15 @@ fn main() {
                        window_min_size: Some(size(px(1024.0), px(768.0))),
                        ..Default::default()
             },
-            move |_window, cx| cx.new(|_| SysInfoApp::new(background_availability)),
+            move |_window, cx| {
+                cx.new(|_| {
+                    let app = SysInfoApp::new(background_availability);
+                    match initial_tab {
+                        Some(tab) => app.with_tab(tab),
+                        None => app,
+                    }
+                })
+            },
         )
         .unwrap();
 

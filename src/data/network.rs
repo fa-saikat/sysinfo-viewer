@@ -1,7 +1,8 @@
+use super::fixture;
 use std::fs;
 use sysinfo::Networks;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum InterfaceState {
     Up,
     Down,
@@ -50,13 +51,21 @@ pub fn collect() -> Vec<NetworkInterface> {
 /// kernel itself can't determine link state for (common on virtual
 /// interfaces like some bridges), which we surface as-is.
 fn read_operstate(iface: &str) -> InterfaceState {
-    match fs::read_to_string(format!("/sys/class/net/{iface}/operstate")) {
-        Ok(state) => match state.trim() {
-            "up" => InterfaceState::Up,
-            "down" => InterfaceState::Down,
-            _ => InterfaceState::Unknown,
-        },
+    match fs::read_to_string(fixture::sys_path(&format!(
+        "/sys/class/net/{iface}/operstate"
+    ))) {
+        Ok(state) => classify_operstate(state.trim()),
         Err(_) => InterfaceState::Unknown,
+    }
+}
+
+/// Pure classifier over an `operstate` file body, kept separate from the
+/// file read so tests can drive it with canned inputs.
+fn classify_operstate(state: &str) -> InterfaceState {
+    match state {
+        "up" => InterfaceState::Up,
+        "down" => InterfaceState::Down,
+        _ => InterfaceState::Unknown,
     }
 }
 
@@ -85,4 +94,25 @@ fn interface_ip_addresses() -> std::collections::HashMap<String, String> {
     }
 
     best.into_iter().map(|(name, (_, ip))| (name, ip)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_known_operstates() {
+        assert_eq!(classify_operstate("up"), InterfaceState::Up);
+        assert_eq!(classify_operstate("down"), InterfaceState::Down);
+        assert_eq!(InterfaceState::Up.label(), "up");
+        assert_eq!(InterfaceState::Down.label(), "down");
+    }
+
+    #[test]
+    fn unknown_for_anything_the_kernel_cannot_determine() {
+        for raw in ["unknown", "dormant", "", "UP"] {
+            assert_eq!(classify_operstate(raw), InterfaceState::Unknown);
+        }
+        assert_eq!(InterfaceState::Unknown.label(), "unknown");
+    }
 }

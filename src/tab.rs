@@ -39,6 +39,21 @@ impl Tab {
         }
     }
 
+    /// Parses the `SYSINFO_TAB` launch switch used by the test harness's
+    /// screenshot script. Accepts the tab label plus a few short aliases;
+    /// anything else is `None` and the app opens on Overview as usual.
+    pub fn from_slug(slug: &str) -> Option<Tab> {
+        match slug.trim().to_lowercase().as_str() {
+            "overview" => Some(Tab::Overview),
+            "processor" | "cpu" => Some(Tab::Processor),
+            "memory" | "mem" | "ram" => Some(Tab::Memory),
+            "network" | "net" => Some(Tab::Network),
+            "storage" | "disk" | "disks" => Some(Tab::Storage),
+            "graphics" | "gpu" => Some(Tab::Graphics),
+            _ => None,
+        }
+    }
+
     pub fn subtitle(self) -> &'static str {
         match self {
             Tab::Overview => "jadupc-desktop",

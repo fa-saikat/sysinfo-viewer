@@ -1,7 +1,8 @@
+use super::fixture;
 use std::fs;
 use sysinfo::System;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Virtualization {
     IntelVtx,
     AmdV,
@@ -77,11 +78,13 @@ pub fn collect(sys: &System) -> CpuInfo {
 /// path on virtually every Linux distro. Falls back silently if the
 /// kernel doesn't expose cpufreq (some VMs, some ARM boards).
 fn max_frequency_from_sysfs() -> Option<u64> {
-    let khz: u64 = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
-        .ok()?
-        .trim()
-        .parse()
-        .ok()?;
+    let khz: u64 = fs::read_to_string(fixture::sys_path(
+        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
+    ))
+    .ok()?
+    .trim()
+    .parse()
+    .ok()?;
     Some(khz / 1000)
 }
 
@@ -92,10 +95,15 @@ fn max_frequency_from_sysfs() -> Option<u64> {
 /// firmware, which this can't distinguish from userspace. Cross-checking
 /// `/dev/kvm` existence would narrow that gap further if needed later.
 fn detect_virtualization() -> Virtualization {
-    let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") else {
+    let Ok(cpuinfo) = fs::read_to_string(fixture::sys_path("/proc/cpuinfo")) else {
         return Virtualization::Unknown;
     };
+    detect_virtualization_from_flags(&cpuinfo)
+}
 
+/// Pure classifier over a `/proc/cpuinfo` text, kept separate from the
+/// file read so tests can drive it with canned inputs.
+fn detect_virtualization_from_flags(cpuinfo: &str) -> Virtualization {
     let Some(flags_line) = cpuinfo.lines().find(|l| l.starts_with("flags")) else {
         return Virtualization::Unknown;
     };
@@ -106,5 +114,46 @@ fn detect_virtualization() -> Virtualization {
         Virtualization::AmdV
     } else {
         Virtualization::Unsupported
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_intel_vmx_flag() {
+        let info = "processor\t: 0\nflags\t\t: fpu vmx sse2\n";
+        assert_eq!(
+            detect_virtualization_from_flags(info),
+            Virtualization::IntelVtx
+        );
+        assert!(Virtualization::IntelVtx.is_enabled());
+        assert_eq!(Virtualization::IntelVtx.label(), "Intel VT-x");
+    }
+
+    #[test]
+    fn detects_amd_svm_flag() {
+        let info = "processor\t: 0\nflags\t\t: fpu svm sse2\n";
+        assert_eq!(
+            detect_virtualization_from_flags(info),
+            Virtualization::AmdV
+        );
+    }
+
+    #[test]
+    fn distinguishes_unsupported_from_unknown() {
+        let no_flags = "processor\t: 0\nmodel name\t: Test CPU\n";
+        assert_eq!(
+            detect_virtualization_from_flags(no_flags),
+            Virtualization::Unknown
+        );
+        let without_either = "processor\t: 0\nflags\t\t: fpu sse2\n";
+        assert_eq!(
+            detect_virtualization_from_flags(without_either),
+            Virtualization::Unsupported
+        );
+        assert_eq!(Virtualization::Unsupported.label(), "Not available");
+        assert!(!Virtualization::Unsupported.is_enabled());
     }
 }

@@ -17,6 +17,7 @@
 //! hardware; PCI/sysfs output varies more across machines than anything
 //! else here.
 
+use super::fixture;
 use std::process::Command;
 
 #[derive(Clone)]
@@ -114,13 +115,14 @@ fn resolve_vram(gpu: &GpuInfo) -> VramSize {
 }
 
 /// `lspci` bus IDs look like `00:02.0`; sysfs PCI device dirs are the same
-/// thing with an explicit `0000:` domain prefix.
-fn sysfs_pci_path(bus_id: &str) -> String {
-    format!("/sys/bus/pci/devices/0000:{bus_id}")
+/// thing with an explicit `0000:` domain prefix. Re-rooted under the
+/// fixture root in tests via [`fixture::sys_path`].
+fn sysfs_pci_path(bus_id: &str) -> std::path::PathBuf {
+    fixture::sys_path(&format!("/sys/bus/pci/devices/0000:{bus_id}"))
 }
 
 fn amdgpu_vram(bus_id: &str) -> Option<VramSize> {
-    let bytes: u64 = std::fs::read_to_string(format!("{}/mem_info_vram_total", sysfs_pci_path(bus_id)))
+    let bytes: u64 = std::fs::read_to_string(sysfs_pci_path(bus_id).join("mem_info_vram_total"))
         .ok()?
         .trim()
         .parse()
@@ -159,4 +161,54 @@ fn run(argv: &[&str]) -> Option<String> {
         return None;
     }
     String::from_utf8(output.stdout).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LSPCI_FIXTURE: &str = "\
+00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620 (rev 07)\n\
+\tSubsystem: Lenovo Device 22b0\n\
+\tKernel driver in use: i915\n\
+01:00.0 3D controller: NVIDIA Corporation GP108M [GeForce MX150] (rev a1)\n\
+\tSubsystem: Lenovo Device 22b1\n\
+\tKernel driver in use: nvidia\n\
+02:00.0 Network controller: Intel Corporation Wi-Fi 6 AX200\n\
+\tKernel driver in use: iwlwifi\n\
+03:00.0 Display controller: Advanced Micro Devices, Inc. [AMD/ATI] Vega without driver\n";
+
+    #[test]
+    fn parses_display_devices_and_skips_the_rest() {
+        let gpus = parse_lspci(LSPCI_FIXTURE);
+        assert_eq!(gpus.len(), 3);
+        assert_eq!(gpus[0].pci_bus_id, "00:02.0");
+        assert_eq!(gpus[0].model, "Intel Corporation UHD Graphics 620");
+        assert_eq!(gpus[0].driver, "i915");
+        assert_eq!(gpus[1].model, "NVIDIA Corporation GP108M [GeForce MX150]");
+        assert_eq!(gpus[1].driver, "nvidia");
+    }
+
+    #[test]
+    fn missing_driver_falls_back_to_unknown() {
+        let gpus = parse_lspci(LSPCI_FIXTURE);
+        assert_eq!(gpus[2].driver, "Unknown");
+    }
+
+    #[test]
+    fn strips_revision_suffix_only() {
+        assert_eq!(
+            strip_revision_suffix("UHD Graphics 620 (rev 07)"),
+            "UHD Graphics 620"
+        );
+        assert_eq!(
+            strip_revision_suffix("GeForce MX150 (rev a1)"),
+            "GeForce MX150"
+        );
+        // Parenthesised model names that are not revisions survive.
+        assert_eq!(
+            strip_revision_suffix("Radeon (TM) Graphics"),
+            "Radeon (TM) Graphics"
+        );
+    }
 }

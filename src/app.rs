@@ -1,7 +1,7 @@
 //! Rendering. One file, like the welcome app's `main.rs`, since the whole
 //! UI is small enough that splitting it further would mean more
 //! navigating between files than actual complexity saved. Data
-//! collection lives in `crate::data` and stays untouched by any of this.
+//! collection lives in the library's `data` module and stays untouched by any of this.
 //!
 //! A few style methods here (`flex_wrap()`, `gpui::relative()`,
 //! directional borders like `border_r_1()`/`border_l_2()`/`border_b_1()`,
@@ -17,7 +17,7 @@
 use gpui::{div, img, prelude::*, px, rgb, rgba, Context, FontWeight, ObjectFit, Window};
 
 use crate::colors;
-use crate::data::{
+use sysinfo_viewer::data::{
     format_bytes, format_frequency_mhz, GpuInfo, InterfaceState, MemoryInfo, NetworkInterface,
     StorageDevice, SystemSnapshot, VramSize,
 };
@@ -48,6 +48,13 @@ impl SysInfoApp {
             snapshot: SystemSnapshot::collect(),
             background_availability,
         }
+    }
+
+    /// Test-harness builder: opens on `tab` instead of Overview when the
+    /// `SYSINFO_TAB` launch switch names one (see `Tab::from_slug`).
+    pub fn with_tab(mut self, tab: Tab) -> Self {
+        self.tab = tab;
+        self
     }
 
     fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
