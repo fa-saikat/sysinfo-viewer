@@ -457,6 +457,96 @@ fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Di
         .child(div().w(px(64.)).flex_shrink_0().child(state))
 }
 
+/// Storage: devices and partitions as a dense table with a neutral
+/// usage bar per device. Only collected facts render.
+pub fn storage(snapshot: &SystemSnapshot, cx: &App) -> Vec<Div> {
+    if snapshot.storage.is_empty() {
+        return vec![group(
+            "Devices",
+            list(vec![("Devices", muted("No mounted devices", cx))]),
+            cx,
+        )];
+    }
+    let mut rows = div().flex().flex_col().child(table_head(
+        vec![
+            ("Mount".to_string(), None),
+            ("Used / Size".to_string(), Some(150.0)),
+        ],
+        cx,
+    ));
+    for device in &snapshot.storage {
+        rows = rows.child(storage_row(device, cx));
+    }
+    vec![div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .child(group_title(
+            "Devices",
+            Some(format!(
+                "{} {}",
+                snapshot.storage.len(),
+                if snapshot.storage.len() == 1 {
+                    "device"
+                } else {
+                    "devices"
+                }
+            )),
+            cx,
+        ))
+        .child(
+            div()
+                .rounded(cx.theme().radius_lg)
+                .bg(cx.theme().secondary.opacity(0.45))
+                .border_1()
+                .border_color(cx.theme().border.opacity(0.7))
+                .overflow_hidden()
+                .child(rows),
+        )]
+}
+
+fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .px(px(12.))
+        .py(px(10.))
+        .border_t_1()
+        .border_color(cx.theme().border.opacity(0.7))
+        .child(
+            div()
+                .flex()
+                .items_baseline()
+                .gap(px(8.))
+                .child(div().flex_1().min_w_0().child(mono(&device.mount_point, cx)))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("{} · {}", device.device_name, device.filesystem)),
+                )
+                .child(
+                    div()
+                        .w(px(150.))
+                        .flex_shrink_0()
+                        .text_right()
+                        .child(mono(
+                            &format!(
+                                "{} / {}",
+                                format_bytes(device.used_bytes()),
+                                format_bytes(device.total_bytes)
+                            ),
+                            cx,
+                        )),
+                ),
+        )
+        .child(super::library::progress_bar(
+            format!("storage-{}", device.mount_point),
+            device.used_fraction() * 100.0,
+        ))
+}
+
 /// Temporary honest state for tabs whose tickets have not landed yet.
 pub fn rebuilding(tab: Tab, cx: &App) -> AnyElement {
     Empty::new()

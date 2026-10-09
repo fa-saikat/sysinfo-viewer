@@ -257,6 +257,11 @@ impl RootView {
                 .flex_col()
                 .gap(px(20.))
                 .children(views::network(&self.snapshot, cx)),
+            Tab::Storage => div()
+                .flex()
+                .flex_col()
+                .gap(px(20.))
+                .children(views::storage(&self.snapshot, cx)),
             _ => div()
                 .flex()
                 .flex_col()
