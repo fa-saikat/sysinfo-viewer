@@ -407,14 +407,14 @@ impl RootView {
 /// masked unless revealed — because the button copies the page.
 fn overview_report(snapshot: &SystemSnapshot, serial_shown: bool) -> String {
     use sysinfo_viewer::data::{
-        format_bytes, format_frequency_mhz, product_name, serial_number,
+        format_bytes, format_frequency_mhz, product_name, serial_number, storage_totals,
     };
     let cpu = &snapshot.cpu;
     let max_freq = cpu
         .max_frequency_mhz
         .map(format_frequency_mhz)
         .unwrap_or_else(|| "Unknown".to_string());
-    let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
+    let (_, storage_total) = storage_totals(&snapshot.storage);
     let serial = match serial_number() {
         Some(number) if serial_shown => number,
         Some(_) => "••••••••••".to_string(),

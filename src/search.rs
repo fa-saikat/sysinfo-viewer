@@ -7,8 +7,8 @@
 //! test` without a display.
 
 use super::data::{
-    format_bytes, format_frequency_mhz, product_name, serial_number, vram_label, InterfaceState,
-    SystemSnapshot,
+    format_bytes, format_frequency_mhz, product_name, serial_number, storage_totals, vram_label,
+    InterfaceState, SystemSnapshot,
 };
 
 /// Case-insensitive substring match over a row's text. An empty query
@@ -44,7 +44,7 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 .max_frequency_mhz
                 .map(format_frequency_mhz)
                 .unwrap_or_else(|| "Unknown".to_string());
-            let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
+            let (_, storage_total) = storage_totals(&snapshot.storage);
             let storage = if storage_total > 0 {
                 format_bytes(storage_total)
             } else {
@@ -176,13 +176,12 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 snapshot
                     .gpus
                     .iter()
-                    .map(|gpu| {
-                        format!(
-                            "{} {} {}",
-                            gpu.model,
-                            vram_label(&gpu.vram, total),
-                            gpu.driver
-                        )
+                    .flat_map(|gpu| {
+                        vec![
+                            text("Model", &gpu.model),
+                            text("VRAM", &vram_label(&gpu.vram, total)),
+                            text("Driver", &gpu.driver),
+                        ]
                     })
                     .collect()
             }

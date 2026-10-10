@@ -21,7 +21,7 @@ pub use gpu::{vram_label, GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
 pub use os::{product_name, serial_number, OsInfo};
-pub use storage::StorageDevice;
+pub use storage::{StorageDevice, storage_totals, unique_devices};
 
 use std::time::Instant;
 use sysinfo::System;

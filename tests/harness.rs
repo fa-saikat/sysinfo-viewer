@@ -22,7 +22,7 @@ use sysinfo_viewer::data::{
     format_bytes, format_frequency_mhz, CpuInfo, GpuInfo, InterfaceState, MemoryInfo,
     NetworkInterface, OsInfo, StorageDevice, SystemSnapshot, Virtualization, VramSize,
 };
-use sysinfo_viewer::search::{count_matches, matches_query, tab_matches};
+use sysinfo_viewer::search::{count_matches, matches_query, row_texts, tab_matches};
 
 static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -350,6 +350,56 @@ fn search_inventory_counts_and_switches() {
         &snapshot.os.hostname.to_uppercase()
     ));
     assert!(matches_query("SHOPNO", "shopno"));
+}
+
+#[test]
+fn graphics_inventory_is_three_rows_per_gpu() {
+    // Regression: the graphics renderer filters per-GPU chunks of three
+    // inventory rows (Model/VRAM/Driver). The inventory once returned one
+    // combined string per GPU, so opening the tab sliced [0..3] out of a
+    // length-1 vec and panicked (likewise, typing "gp" auto-switched to
+    // the tab and crashed the same way).
+    let fixture = Fixture::new("graphics-inventory");
+    fixture.stub(
+        "lspci",
+        "printf '03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600] (rev c1)\\n\\tKernel driver in use: amdgpu\\n01:00.0 3D controller: NVIDIA Corporation GA107M [GeForce RTX 3050] (rev a1)\\n\\tKernel driver in use: nvidia\\n'",
+    );
+    fixture.stub(
+        "nvidia-smi",
+        "printf '00000000:01:00.0, 4096\\n'",
+    );
+    fixture.write(
+        "sys/bus/pci/devices/0000:03:00.0/mem_info_vram_total",
+        "8589934592\n",
+    );
+    let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+
+    let snapshot = SystemSnapshot::collect();
+    assert_eq!(snapshot.gpus.len(), 2);
+
+    let texts = row_texts("graphics", &snapshot, false);
+    assert_eq!(
+        texts.len(),
+        snapshot.gpus.len() * 3,
+        "one Model/VRAM/Driver row per GPU"
+    );
+    // Each GPU's chunk carries its own model and driver strings.
+    for (index, gpu) in snapshot.gpus.iter().enumerate() {
+        let chunk = &texts[index * 3..(index + 1) * 3];
+        assert!(
+            chunk.iter().any(|text| text.contains(&gpu.model)),
+            "chunk {index} carries its model"
+        );
+        assert!(
+            chunk.iter().any(|text| text.contains(&gpu.driver)),
+            "chunk {index} carries its driver"
+        );
+    }
+    // The empty query keeps every row, and a driver query keeps its tab.
+    let (visible, total) = count_matches("graphics", &snapshot, false, "");
+    assert_eq!((visible, total), (6, 6));
+    assert!(tab_matches("graphics", &snapshot, false, "amdgpu"));
+    assert!(tab_matches("graphics", &snapshot, false, "nvidia"));
 }
 
 #[test]

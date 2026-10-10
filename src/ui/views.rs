@@ -20,7 +20,7 @@ use sysinfo_viewer::search::{is_connected, matches_query, row_texts};
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
-    format_bytes, format_frequency_mhz, product_name, SystemSnapshot,
+    format_bytes, format_frequency_mhz, product_name, storage_totals, SystemSnapshot,
 };
 
 /// One description-list group inside a rounded card.
@@ -142,7 +142,7 @@ pub fn overview(
         .max_frequency_mhz
         .map(format_frequency_mhz)
         .unwrap_or_else(|| "Unknown".to_string());
-    let storage_total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
+    let (_, storage_total) = storage_totals(&snapshot.storage);
     let model = product_name().unwrap_or_else(|| "Unknown".to_string());
     let processor = format!("{} · {} threads · {}", cpu.model, cpu.logical_threads, max_freq);
     let memory = format_bytes(snapshot.memory.total_bytes);
@@ -431,11 +431,11 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
 
     let mut rows = div().flex().flex_col().child(table_head(
         vec![
-            ("Name".to_string(), Some(90.0)),
-            ("Type".to_string(), Some(90.0)),
-            ("IPv4".to_string(), None),
-            ("MAC".to_string(), Some(150.0)),
-            ("State".to_string(), Some(64.0)),
+            ("Name".to_string(), Some(90.0), false),
+            ("Type".to_string(), Some(90.0), false),
+            ("IPv4".to_string(), None, false),
+            ("MAC".to_string(), Some(150.0), false),
+            ("State".to_string(), Some(64.0), false),
         ],
         cx,
     ));
@@ -468,8 +468,10 @@ pub fn network(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
 }
 
 /// Table header row: 34 high, muted small labels on the header fill.
-/// A `None` width flexes to fill the remaining space.
-fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
+/// A `None` width flexes to fill the remaining space. `align_right`
+/// right-aligns the label (used for numeric columns like Used/Size so
+/// the header lines up with right-aligned cells).
+fn table_head(columns: Vec<(String, Option<f32>, bool)>, cx: &App) -> Div {
     let mut row = div()
         .flex()
         .items_center()
@@ -477,14 +479,22 @@ fn table_head(columns: Vec<(String, Option<f32>)>, cx: &App) -> Div {
         .h(px(34.))
         .px(px(16.))
         .bg(cx.theme().table_head);
-    for (label, width) in columns {
-        let cell = div()
+    for (label, width, align_right) in columns {
+        let mut cell = div()
             .text_xs()
             .font_medium()
             .text_color(cx.theme().muted_foreground)
             .child(label);
+        if align_right {
+            cell = cell.text_right();
+        }
         row = match width {
-            Some(w) => row.child(div().w(px(w)).flex_shrink_0().child(cell)),
+            Some(w) => row.child(
+                div()
+                    .w(px(w))
+                    .flex_shrink_0()
+                    .child(cell),
+            ),
             None => row.child(div().flex_1().min_w_0().child(cell)),
         };
     }
@@ -535,7 +545,10 @@ fn interface_row(iface: &sysinfo_viewer::data::NetworkInterface, cx: &App) -> Di
 }
 
 /// Storage: devices and partitions as a dense table with a neutral
-/// usage bar per device. Only collected facts render.
+/// usage bar per device. Only collected facts render. Columns mirror
+/// the Network interfaces table: every rendered fact has its own
+/// header, and Used/Size get separate right-aligned columns so numbers
+/// line up instead of sharing one slash-joined cell.
 pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     if snapshot.storage.is_empty() {
         return vec![group(
@@ -547,8 +560,11 @@ pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let texts = row_texts("storage", snapshot, false);
     let mut rows = div().flex().flex_col().child(table_head(
         vec![
-            ("Mount".to_string(), None),
-            ("Used / Size".to_string(), Some(150.0)),
+            ("Mount".to_string(), None, false),
+            ("Device".to_string(), Some(150.0), false),
+            ("Type".to_string(), Some(80.0), false),
+            ("Used".to_string(), Some(110.0), true),
+            ("Size".to_string(), Some(110.0), true),
         ],
         cx,
     ));
@@ -586,6 +602,16 @@ pub fn storage(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
 }
 
 fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
+    let device_cell = if device.device_name.is_empty() {
+        muted("—", cx)
+    } else {
+        mono(&device.device_name, cx)
+    };
+    let type_cell = if device.filesystem.is_empty() {
+        muted("—", cx)
+    } else {
+        body(&device.filesystem, cx)
+    };
     div()
         .flex()
         .flex_col()
@@ -597,28 +623,29 @@ fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
         .child(
             div()
                 .flex()
-                .items_baseline()
-                .gap(px(8.))
+                .items_center()
+                .gap(px(12.))
                 .child(div().flex_1().min_w_0().child(mono(&device.mount_point, cx)))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!("{} · {}", device.device_name, device.filesystem)),
-                )
                 .child(
                     div()
                         .w(px(150.))
                         .flex_shrink_0()
+                        .child(device_cell),
+                )
+                .child(div().w(px(80.)).flex_shrink_0().child(type_cell))
+                .child(
+                    div()
+                        .w(px(110.))
+                        .flex_shrink_0()
                         .text_right()
-                        .child(mono(
-                            &format!(
-                                "{} / {}",
-                                format_bytes(device.used_bytes()),
-                                format_bytes(device.total_bytes)
-                            ),
-                            cx,
-                        )),
+                        .child(mono(&format_bytes(device.used_bytes()), cx)),
+                )
+                .child(
+                    div()
+                        .w(px(110.))
+                        .flex_shrink_0()
+                        .text_right()
+                        .child(mono(&format_bytes(device.total_bytes), cx)),
                 ),
         )
         .child(super::library::progress_bar(
@@ -693,10 +720,10 @@ pub fn graphics(
                         .gpus
                         .iter()
                         .enumerate()
-                        .filter(|(index, _)| {
-                            texts[index * per_gpu..(index + 1) * per_gpu]
-                                .iter()
-                                .any(|text| matches_query(query, text))
+                        .filter(|(index, _)| match texts.chunks(per_gpu).nth(*index) {
+                            // Fail open: a short inventory must never hide a GPU.
+                            Some(chunk) => chunk.iter().any(|text| matches_query(query, text)),
+                            None => true,
                         })
                         .map(|(_, gpu)| {
                             div()
@@ -789,8 +816,7 @@ pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot) -> Vec<Tag> {
             tags
         }
         Tab::Storage => {
-            let total: u64 = snapshot.storage.iter().map(|d| d.total_bytes).sum();
-            let used: u64 = snapshot.storage.iter().map(|d| d.used_bytes()).sum();
+            let (used, total) = storage_totals(&snapshot.storage);
             vec![fact_tag(format!(
                 "{} of {}",
                 format_bytes(used),
@@ -798,14 +824,11 @@ pub fn header_stats(tab: Tab, snapshot: &SystemSnapshot) -> Vec<Tag> {
             ))]
         }
         Tab::Graphics => match snapshot.gpus.first() {
-            Some(gpu) => vec![
-                fact_tag(gpu.model.clone()),
-                fact_tag(format!(
-                    "{} · {}",
-                    gpu.driver,
-                    sysinfo_viewer::data::vram_label(&gpu.vram, snapshot.memory.total_bytes)
-                )),
-            ],
+            Some(gpu) => vec![fact_tag(format!(
+                "{} · {}",
+                gpu.driver,
+                sysinfo_viewer::data::vram_label(&gpu.vram, snapshot.memory.total_bytes)
+            ))],
             None => vec![fact_tag("No GPU detected".to_string())],
         },
     }
