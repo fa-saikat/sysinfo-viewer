@@ -1,115 +1,64 @@
-//! JaduPC System Information Viewer
-//!
-//! A single-window dashboard built with GPUI, styled to match the
-//! JaduPC 3-in-1 welcome app: same palette, same full-bleed background +
-//! scrim treatment per section, same rem-based responsive scale.
+//! SysInfo on the Shelf stack: kit bootstrap, native window, tab/theme
+//! launch switches for the harness.
 //!
 //! Run with: cargo run --release
 
-mod app;
-mod colors;
-mod data;
+mod assets;
 mod tab;
+mod theme;
+mod ui;
 
-use std::borrow::Cow;
-use std::fs;
-use std::path::PathBuf;
-
-use anyhow::{anyhow, Result};
-use gpui::{
-    px, size, App, AppContext, AssetSource, Bounds, SharedString, WindowBounds, WindowOptions,
+use gpui_kit::component::{Theme, ThemeMode};
+use gpui_kit::{
+    px, size, App, AppContext, Bounds, KeyBinding, Window, WindowBounds, WindowOptions,
 };
 
-use app::SysInfoApp;
-use tab::BackgroundAvailability;
-
-// ---------------------------------------------------------------------
-// Assets — identical strategy to the welcome app: read from an
-// `assets/` directory next to the binary (or the crate root in dev)
-// rather than embedding, so dropping new background art in doesn't
-// require a rebuild.
-// ---------------------------------------------------------------------
-struct FsAssets {
-    root: PathBuf,
-}
-
-impl FsAssets {
-    fn new() -> Self {
-        let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-
-        let candidates = [
-            exe_dir.map(|d| d.join("assets")),
-            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")),
-            Some(PathBuf::from("/usr/share/sysinfo-viewer/assets")),
-            Some(PathBuf::from("assets")),
-        ];
-
-        let root = candidates
-        .into_iter()
-        .flatten()
-        .find(|p| p.is_dir())
-        .unwrap_or_else(|| PathBuf::from("assets"));
-
-        Self { root }
-    }
-}
-
-impl AssetSource for FsAssets {
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if path.is_empty() {
-            return Ok(None);
-        }
-        let full_path = self.root.join(path);
-        match fs::read(&full_path) {
-            Ok(bytes) => Ok(Some(Cow::Owned(bytes))),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(err) => Err(anyhow!(
-                "failed to read asset \"{path}\" at {}: {err}",
-                full_path.display()
-            )),
-        }
-    }
-
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let dir = self.root.join(path);
-        let Ok(entries) = fs::read_dir(&dir) else {
-            return Ok(Vec::new());
-        };
-        Ok(entries
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .map(|name| format!("{path}/{name}").into())
-        .collect())
-    }
-}
+use assets::AppAssets;
+use tab::Tab;
+use theme::{apply_accent, BRAND_ACCENT};
+use ui::{FocusSearch, RootView, KEY_CONTEXT};
 
 fn main() {
-    let assets = FsAssets::new();
-    // Resolved once, up front, against the same root FsAssets reads from
-    // — see `tab::BackgroundAvailability` for why.
-    let background_availability = BackgroundAvailability::probe(&assets.root);
+    // Harness launch switches (see docs/testing.md): open on the named
+    // tab so the screenshot script can capture every tab unattended.
+    // Unset or unparsable values open on dark Overview, exactly as before.
+    let initial_tab = std::env::var("SYSINFO_TAB")
+        .ok()
+        .and_then(|slug| Tab::from_slug(&slug));
+    let initial_theme = match std::env::var("SYSINFO_THEME")
+        .as_deref()
+        .unwrap_or("dark")
+    {
+        "light" => ThemeMode::Light,
+        _ => ThemeMode::Dark,
+    };
 
-    gpui_platform::application()
-    .with_assets(assets)
-    .run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(720.0), px(480.0)), cx);
+    gpui_kit::application()
+        .with_assets(AppAssets)
+        .run(move |cx: &mut App| {
+            gpui_kit::init(cx);
+            Theme::change(initial_theme, None, cx);
+            apply_accent(BRAND_ACCENT, cx);
+            // Native title bar, so sheets hang full-height.
+            Theme::update(cx, |theme| {
+                theme.sheet.margin_top = px(0.);
+            });
+            cx.bind_keys([KeyBinding::new("/", FocusSearch, Some(KEY_CONTEXT))]);
 
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                       titlebar: None,
-                       is_resizable: false,
-                       is_movable: true,
-                       app_id: Some("SystemInfoViewer".to_string()),
-                       window_min_size: Some(size(px(1024.0), px(768.0))),
-                       ..Default::default()
-            },
-            move |_window, cx| cx.new(|_| SysInfoApp::new(background_availability)),
-        )
-        .unwrap();
+            let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(1024.), px(680.))),
+                    ..Default::default()
+                },
+                cx,
+                |window: &mut Window, cx: &mut App| {
+                    cx.new(|cx| RootView::new(window, cx, initial_tab))
+                },
+            )
+            .expect("failed to open window");
 
-        cx.activate(true);
-    });
+            cx.activate(true);
+        });
 }
