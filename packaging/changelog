@@ -1,3 +1,26 @@
+sysinfo-viewer (2.0.0-1) unstable; urgency=low
+
+  * ui: update about dialog
+  * Fix storage totals double-count and align table columns (refs #13)
+  * Revert "Drop throwaway mockup from implement branch; it lives on prototype/sysinfo-ui-shelf-v2 (refs #7)"
+  * Drop throwaway mockup from implement branch; it lives on prototype/sysinfo-ui-shelf-v2 (refs #7)
+  * Test-feedback round 3: hugging badges, L3-only cache, iface types, page-faithful copy (refs #7)
+  * Test-feedback round 2: badges, cache, iface types, copy report, type scale (refs #7)
+  * Overview polish: row metrics, borders, type scale, sidebar rhythm (refs #7)
+  * Fix overlay crashes: open windows through the kit Root (refs #7)
+  * Suite pass: search in lib, voice audit, goldens wiring, dead art removal (refs #16)
+  * Global search + keyboard + tooltips (refs #15)
+  * Graphics tab + tool-missing notice (refs #10)
+  * Storage tab (refs #13)
+  * Network tab (refs #12)
+  * Memory tab + honest swap state (refs #11)
+  * Processor tab + frequency chart (refs #14)
+  * Shelf shell + Overview tab (refs #9)
+  * Bring Shelf mockup reference into implement branch
+  * Integration harness baseline (refs #8)
+
+ -- FA Saikat <fahimabrar.saikat@gmail.com>  Mon, 12 Oct 2026 15:38:14 +0600
+
 sysinfo-viewer (1.2.0-1) unstable; urgency=low
 
   * bump version to 1.2.0
