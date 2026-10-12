@@ -9,11 +9,10 @@ use gpui_kit::{div, px, App, Styled, Window};
 use super::sidebar::context_tile;
 use gpui_kit::assets::IconName;
 
-/// Information dialog for the suite: 40 inverted mark, one sentence, a
-/// description list, and a right-aligned Close button. Facts come from
-/// the live snapshot — never hard-coded per distro.
-pub fn show_about(window: &mut Window, cx: &mut App, distribution: String) {
-    window.open_dialog(cx, move |dialog, _window, cx| {
+/// Information dialog: 40 inverted mark, one sentence, a
+/// description list, and a right-aligned Close button.
+pub fn show_about(window: &mut Window, cx: &mut App) {
+    window.open_dialog(cx, |dialog, _window, cx| {
         let mark = context_tile(
             IconName::Cpu,
             40.0,
@@ -56,7 +55,7 @@ pub fn show_about(window: &mut Window, cx: &mut App, distribution: String) {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child("System details for the suite."),
+                                            .child("System information viewer for Linux desktop."),
                                     ),
                             ),
                     )
@@ -66,8 +65,8 @@ pub fn show_about(window: &mut Window, cx: &mut App, distribution: String) {
                             .columns(1)
                             .bordered(true)
                             .item("Version", "1.2.0", 1)
-                            .item("Distribution", distribution.clone(), 1)
-                            .item("Developer", "ShopnoOS team", 1)
+                            .item("Developer", "Fahim A Saikat", 1)
+                            .item("Copyright", "© 2026 JaduPc", 1)
                             .item("License", "MIT", 1),
                     ),
             )

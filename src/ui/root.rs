@@ -207,13 +207,12 @@ impl RootView {
                 view: view.clone(),
             });
         }
-        let distro = self.snapshot.os.distro.clone();
         let about = Button::new("footer-about")
             .ghost()
             .small()
             .label("About")
             .icon(IconName::Info)
-            .on_click(move |_, window, cx| dialogs::show_about(window, cx, distro.clone()));
+            .on_click(|_, window, cx| dialogs::show_about(window, cx));
         let theme_icon = if theme::is_dark(cx) {
             IconName::Moon
         } else {
