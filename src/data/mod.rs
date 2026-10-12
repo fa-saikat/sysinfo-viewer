@@ -9,18 +9,19 @@
 //! everything.
 
 mod cpu;
+pub mod fixture;
 mod gpu;
 mod memory;
 mod network;
 mod os;
 mod storage;
 
-pub use cpu::CpuInfo;
-pub use gpu::{GpuInfo, VramSize};
+pub use cpu::{CacheInfo, CpuInfo, Virtualization};
+pub use gpu::{vram_label, GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
-pub use os::OsInfo;
-pub use storage::StorageDevice;
+pub use os::{product_name, serial_number, OsInfo};
+pub use storage::{StorageDevice, storage_totals, unique_devices};
 
 use std::time::Instant;
 use sysinfo::System;
@@ -108,5 +109,69 @@ pub fn format_uptime(total_secs: u64) -> String {
         (0, 0) => format!("{minutes}m"),
         (0, _) => format!("{hours}h {minutes}m"),
         (_, _) => format!("{days}d {hours}h {minutes}m"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_bytes_picks_readable_units() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(344), "344 B");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(2 * 1024 * 1024), "2.0 MB");
+        assert_eq!(format_bytes(512 * 1024 * 1024 * 1024), "512.0 GB");
+    }
+
+    #[test]
+    fn format_frequency_switches_units_at_1ghz() {
+        assert_eq!(format_frequency_mhz(800), "800 MHz");
+        assert_eq!(format_frequency_mhz(1000), "1.00 GHz");
+        assert_eq!(format_frequency_mhz(4900), "4.90 GHz");
+    }
+
+    #[test]
+    fn format_uptime_matches_overview_copy() {
+        assert_eq!(format_uptime(90), "1m");
+        assert_eq!(format_uptime(2 * 3600 + 14 * 60), "2h 14m");
+        assert_eq!(format_uptime(2 * 86_400 + 6 * 3600 + 14 * 60), "2d 6h 14m");
+    }
+
+    #[test]
+    fn fresh_snapshot_reads_as_just_now() {
+        let snapshot = SystemSnapshot {
+            os: OsInfo {
+                distro: String::new(),
+                kernel_version: String::new(),
+                hostname: String::new(),
+                uptime: String::new(),
+            },
+            cpu: CpuInfo {
+                model: String::new(),
+                architecture: String::new(),
+                physical_cores: 0,
+                logical_threads: 0,
+                max_frequency_mhz: None,
+                virtualization: cpu::Virtualization::Unknown,
+                per_core_frequency_mhz: Vec::new(),
+                cache: Vec::new(),
+            },
+            memory: MemoryInfo {
+                total_bytes: 0,
+                used_bytes: 0,
+                available_bytes: 0,
+                swap_total_bytes: 0,
+                swap_used_bytes: 0,
+            },
+            network: Vec::new(),
+            storage: Vec::new(),
+            gpus: Vec::new(),
+            collected_at: Instant::now(),
+        };
+        assert_eq!(snapshot.age_label(), "Just now");
+        assert!(!snapshot.memory.has_swap());
+        assert_eq!(snapshot.memory.used_fraction(), 0.0);
     }
 }
