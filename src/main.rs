@@ -10,7 +10,8 @@ mod ui;
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{
-    px, size, App, AppContext, Bounds, KeyBinding, Window, WindowBounds, WindowOptions,
+    px, size, App, AppContext, Bounds, KeyBinding, TitlebarOptions, Window, WindowBounds,
+    WindowOptions,
 };
 
 use assets::AppAssets;
@@ -50,6 +51,11 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(1024.), px(680.))),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("System Info Viewer".into()),
+                        ..Default::default()
+                    }),
+                    app_id: Some("sysinfo-viewer".to_string()),
                     ..Default::default()
                 },
                 cx,
