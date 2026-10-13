@@ -1,15 +1,19 @@
-# SysInfo — System Information Viewer for Linux
+# SysInfo Viewer - System Information Viewer for Linux
 
-A fast, native system information viewer for the Linux desktop. See your OS, CPU, memory, network, storage, and GPU in one clean window — with search, one-click copy, light/dark themes, and honest fallbacks instead of fake data.
+[![Build](https://github.com/fa-saikat/sysinfo-viewer/actions/workflows/rust.yml/badge.svg)](https://github.com/fa-saikat/sysinfo-viewer/actions/workflows/rust.yml)
+[![Release](https://img.shields.io/github/v/release/fa-saikat/sysinfo-viewer)](https://github.com/fa-saikat/sysinfo-viewer/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+A fast, native system information viewer for the Linux desktop. See your OS, CPU, memory, network, storage, and GPU in one clean window, with search, one-click copy, light/dark themes, and honest fallbacks instead of fake data.
 
 Built with Rust + [GPUI](https://github.com/zed-industries/zed) (via `gpui-kit`).
 
-![Overview — dark theme](design/screenshots/dark/overview.png)
+![Overview - dark theme](design/screenshots/dark/overview.png)
 
 ## Why SysInfo?
 
 - **Everything in one place.** No terminal flags to memorize, no five different tools.
-- **Honest by design.** If a value can't be detected, it says `Unknown` — it never invents numbers.
+- **Honest by design.** If a value can't be detected, it says `Unknown`. It never invents numbers.
 - **Fast and native.** Manual snapshot model: collects on launch and on Refresh, no background polling.
 - **Share-friendly.** `Copy details` gives you a plain-text Overview report for bug reports and forums.
 - **Private by default.** The device serial is masked (`••••••••••`) until you explicitly reveal it.
@@ -29,16 +33,16 @@ Built with Rust + [GPUI](https://github.com/zed-industries/zed) (via `gpui-kit`)
 
 ### Thoughtful touches that matter
 
-- **Global search** — one toolbar box filters every tab. Press `/` to jump to it, see `N of M` live counts, and the app auto-switches to the first tab with a match.
-- **Manual Refresh** — header button re-collects the snapshot and confirms with a notification. The header also shows data freshness (`Just now`, `12s ago`).
-- **Light + dark themes** — one-click toggle in the sidebar footer; accent and charts adapt.
-- **Tool-missing guidance** — if `lspci` isn't installed, a notice explains how to install `pciutils` and Refresh, instead of showing an empty Graphics tab.
-- **Tooltips and keyboard** — icon buttons carry tooltips; `/` focuses search from anywhere.
-- **About dialog** — version, developer, copyright, and license at a glance from the sidebar footer.
+- **Global search:** one toolbar box filters every tab. Press `/` to jump to it, see `N of M` live counts, and the app auto-switches to the first tab with a match.
+- **Manual Refresh:** header button re-collects the snapshot and confirms with a notification. The header also shows data freshness (`Just now`, `12s ago`).
+- **Light + dark themes:** one-click toggle in the sidebar footer; accent and charts adapt.
+- **Tool-missing guidance:** if `lspci` isn't installed, a notice explains how to install `pciutils` and Refresh, instead of showing an empty Graphics tab.
+- **Tooltips and keyboard:** icon buttons carry tooltips; `/` focuses search from anywhere.
+- **About dialog:** version, developer, copyright, and license at a glance from the sidebar footer.
 
 ## Screenshots
 
-Dark theme (light theme ships the same six views — see `design/screenshots/light/`):
+Dark theme (light theme ships the same six views, see `design/screenshots/light/`):
 
 | Overview | Processor |
 | --- | --- |
@@ -54,14 +58,14 @@ Dark theme (light theme ships the same six views — see `design/screenshots/lig
 
 Light-theme Overview for comparison:
 
-![Overview — light theme](design/screenshots/light/overview.png)
+![Overview - light theme](design/screenshots/light/overview.png)
 
 ## Install
 
 ### Requirements
 
-- Linux with X11 or Wayland
-- Rust stable (see CI) + Cargo
+- Linux with X11 or Wayland (Linux-only; no Windows or macOS support planned)
+- Rust stable (tested with 1.98) + Cargo
 - Optional but recommended for full GPU details:
   - `pciutils` (provides `lspci`)
   - `nvidia-smi` (NVIDIA VRAM only; AMD uses sysfs, Intel iGPU is reported as shared)
@@ -72,10 +76,10 @@ On Debian/Ubuntu:
 sudo apt install pciutils
 ```
 
-### Option A — Debian package (recommended)
+### Option A: Debian package (recommended)
 
 ```sh
-git clone git@github.com:fa-saikat/sysinfo-viewer.git
+git clone https://github.com/fa-saikat/sysinfo-viewer.git
 cd sysinfo-viewer
 cargo install cargo-deb
 cargo build --release
@@ -85,10 +89,10 @@ sudo apt install ./target/debian/*.deb
 
 This installs the binary to `/usr/bin/sysinfo-viewer`, a desktop entry (`System Info Viewer` in your app menu), and the app icon.
 
-### Option B — Run from source
+### Option B: Run from source
 
 ```sh
-git clone git@github.com:fa-saikat/sysinfo-viewer.git
+git clone https://github.com/fa-saikat/sysinfo-viewer.git
 cd sysinfo-viewer
 cargo run --release
 ```
@@ -107,7 +111,7 @@ sysinfo-viewer
 | --- | --- |
 | Switch tabs | Sidebar: Overview, Processor, Memory, Network, Storage, Graphics |
 | Search everything | Type in `Search details`, or press `/` anywhere |
-| Copy Overview report | `Copy details` (top right on Overview) — pastes as `Label: value` lines |
+| Copy Overview report | `Copy details` (top right on Overview), pastes as `Label: value` lines |
 | Refresh data | Refresh icon in the header (re-collects + notifies) |
 | Toggle theme | Sun/moon icon in the sidebar footer |
 | Reveal serial | `Show` / `Hide` next to Serial number (stays masked by default) |
@@ -128,7 +132,7 @@ SYSINFO_TAB=graphics SYSINFO_THEME=dark sysinfo-viewer
 
 ## How data is collected
 
-One call — `SystemSnapshot::collect()` — backs every tab. Sources:
+One call, `SystemSnapshot::collect()`, backs every tab. Sources:
 
 - OS / kernel / distro / uptime / hostname via `sysinfo` + OS release info
 - CPU model, topology, frequencies, cache, virtualization flags from `/proc/cpuinfo` and `/sys`
@@ -147,26 +151,32 @@ Every collector degrades to `Unknown` / empty rather than failing the whole snap
 
 ```
 src/
-  main.rs       — app bootstrap (theme, accent, key bindings, window)
-  theme.rs      — brand accent + light/dark toggle
-  assets.rs     — icon registry + app asset source
-  tab.rs        — the six tabs: labels, icons, slugs
-  search.rs     — search inventory (row texts, counts, auto-switch)
+  main.rs       - app bootstrap (theme, accent, key bindings, window)
+  lib.rs        - shared data layer used by the binary and the tests
+  theme.rs      - brand accent + light/dark toggle
+  assets.rs     - icon registry + app asset source
+  tab.rs        - the six tabs: labels, icons, slugs
+  search.rs     - search inventory (row texts, counts, auto-switch)
   ui/
-    root.rs     — app state, header, toolbar, notices, render
-    sidebar.rs  — brand mark, navigation, footer (About, theme)
-    views.rs    — the six tab bodies
-    library.rs  — shared primitives (tiles, tags, badges, bars)
-    dialogs.rs  — About dialog
-  data/         — collectors + formatters, zero UI dependencies
+    mod.rs      - view module wiring
+    root.rs     - app state, header, toolbar, notices, render
+    sidebar.rs  - brand mark, navigation, footer (About, theme)
+    views.rs    - the six tab bodies
+    library.rs  - shared primitives (tiles, tags, badges, bars)
+    dialogs.rs  - About dialog
+  data/         - collectors + formatters, zero UI dependencies
+    mod.rs / fixture.rs - snapshot shape + test fixtures
     os.rs / cpu.rs / memory.rs / network.rs / storage.rs / gpu.rs
 tests/
-  harness.rs    — integration tests over fixture machines
-design/screenshots/ — dark/ + light/ baselines for all six tabs
+  harness.rs    - integration tests over fixture machines
+docs/
+  testing.md    - fixture harness guide
+design/screenshots/ - dark/ + light/ baselines for all six tabs
 scripts/
-  build-deb.sh  — build the .deb via cargo-deb + lintian
-  capture.sh    — screenshot matrix (all tabs × both themes)
-packaging/      — .desktop entry, changelog, maintainer scripts
+  build-deb.sh  - build the .deb via cargo-deb + lintian
+  capture.sh    - screenshot matrix (all tabs x both themes)
+  generate-changelog.sh - changelog helper
+packaging/      - .desktop entry, changelog, maintainer scripts
 ```
 
 ## Contributing
@@ -184,7 +194,7 @@ cargo build --release
 
 ## License & credits
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
 
 - Developer: **Fahim A Saikat**
 - Copyright: **© 2026 JaduPc**

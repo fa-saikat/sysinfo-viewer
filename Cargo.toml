@@ -22,7 +22,7 @@ lto = true
 
 [package.metadata.deb]
 maintainer = "Fahim A Saikat <fahimabrar.saikat@gmail.com>"
-copyright = "2026, JaduPc <Fahim A Saikat>"
+copyright = "2026, JaduPc"
 license-file = ["LICENSE", "4"]
 extended-description = "GUI system information viewer for Linux desktop, built with GPUI. Displays OS/kernel, CPU, memory, network, storage, and GPU details across tabbed views."
 section = "utils"
