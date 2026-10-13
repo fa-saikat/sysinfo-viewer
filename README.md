@@ -4,19 +4,22 @@
 [![Release](https://img.shields.io/github/v/release/fa-saikat/sysinfo-viewer)](https://github.com/fa-saikat/sysinfo-viewer/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A fast, native system information viewer for the Linux desktop. See your OS, CPU, memory, network, storage, and GPU in one clean window, with search, one-click copy, light/dark themes, and honest fallbacks instead of fake data.
+A simple system information viewer for the Linux desktop. See your OS, CPU, memory, network, storage, and GPU in one clean window, with search, one-click copy, light/dark themes, and honest fallbacks instead of fake data.
 
 Built with Rust + [GPUI](https://github.com/zed-industries/zed) (via `gpui-kit`).
 
 ![Overview - dark theme](design/screenshots/dark/overview.png)
 
-## Why SysInfo?
+## Why this exists?
 
-- **Everything in one place.** No terminal flags to memorize, no five different tools.
-- **Honest by design.** If a value can't be detected, it says `Unknown`. It never invents numbers.
-- **Fast and native.** Manual snapshot model: collects on launch and on Refresh, no background polling.
-- **Share-friendly.** `Copy details` gives you a plain-text Overview report for bug reports and forums.
-- **Private by default.** The device serial is masked (`••••••••••`) until you explicitly reveal it.
+I built SysInfo Viewer for [ShopnoOS](https://github.com/fa-saikat/shopno-os), our Debian-based distro and decided to share it. Existing tools either show far more than most people want (hardinfo2), have a dated interface (CPU-X), or work more like a task manager (Mission Center). This one does a single job: show what hardware you have, in a clean layout.
+
+## What it does
+- Shows the details of your machine across six tabs.
+- Marks anything it cannot detect as `Unknown`.
+- Collects on launch and on Refresh, no background polling.
+- `Copy details` gives you a plain-text Overview report for bug reports and forum posts.
+- The device serial is masked (`••••••••••`) until you explicitly reveal it.
 
 ## Features
 
@@ -31,14 +34,11 @@ Built with Rust + [GPUI](https://github.com/zed-industries/zed) (via `gpui-kit`)
 | **Storage** | Every mounted device with mount point, device node, filesystem type, used/size figures, per-device usage bars, and a deduplicated total (bind mounts don't double-count). |
 | **Graphics** | Detected GPUs with model, VRAM, and kernel driver. Multi-GPU aware: AMD VRAM comes from sysfs, NVIDIA VRAM from `nvidia-smi` matched by PCI bus ID, Intel integrated correctly reports shared memory. |
 
-### Thoughtful touches that matter
+### Other details
 
 - **Global search:** one toolbar box filters every tab. Press `/` to jump to it, see `N of M` live counts, and the app auto-switches to the first tab with a match.
 - **Manual Refresh:** header button re-collects the snapshot and confirms with a notification. The header also shows data freshness (`Just now`, `12s ago`).
 - **Light + dark themes:** one-click toggle in the sidebar footer; accent and charts adapt.
-- **Tool-missing guidance:** if `lspci` isn't installed, a notice explains how to install `pciutils` and Refresh, instead of showing an empty Graphics tab.
-- **Tooltips and keyboard:** icon buttons carry tooltips; `/` focuses search from anywhere.
-- **About dialog:** version, developer, copyright, and license at a glance from the sidebar footer.
 
 ## Screenshots
 
@@ -70,26 +70,23 @@ Light-theme Overview for comparison:
   - `pciutils` (provides `lspci`)
   - `nvidia-smi` (NVIDIA VRAM only; AMD uses sysfs, Intel iGPU is reported as shared)
 
-On Debian/Ubuntu:
+### Debian/Ubuntu:
+
+Download the `.deb` from the [latest release](https://github.com/fa-saikat/sysinfo-viewer/releases/latest), then install it:
+
+```sh
+sudo apt install ./sysinfo-viewer_*.deb
+```
+
+For full GPU details, also install `pciutils` (it provides `lspci`):
 
 ```sh
 sudo apt install pciutils
 ```
 
-### Option A: Debian package (recommended)
-
-```sh
-git clone https://github.com/fa-saikat/sysinfo-viewer.git
-cd sysinfo-viewer
-cargo install cargo-deb
-cargo build --release
-./scripts/build-deb.sh
-sudo apt install ./target/debian/*.deb
-```
-
 This installs the binary to `/usr/bin/sysinfo-viewer`, a desktop entry (`System Info Viewer` in your app menu), and the app icon.
 
-### Option B: Run from source
+### Build and Run from source
 
 ```sh
 git clone https://github.com/fa-saikat/sysinfo-viewer.git
@@ -97,7 +94,15 @@ cd sysinfo-viewer
 cargo run --release
 ```
 
-The binary lands at `./target/release/sysinfo-viewer` with `cargo build --release`.
+The binary lands at `./target/release/sysinfo-viewer` with `cargo build --release`. You can also build your own `.deb`:
+
+```sh
+git clone https://github.com/fa-saikat/sysinfo-viewer.git
+cd sysinfo-viewer
+cargo install cargo-deb
+./scripts/build-deb.sh
+sudo apt install ./target/debian/*.deb
+```
 
 ## Usage
 
@@ -181,16 +186,23 @@ packaging/      - .desktop entry, changelog, maintainer scripts
 
 ## Contributing
 
-PRs welcome. The fast loop:
+PRs welcome. The usual loop:
 
 ```sh
 cargo test        # unit + full-stack harness (no display needed)
 cargo build --release
 ```
 
+- `cargo test` runs the unit tests and the full-stack harness. It needs no display.
 - `docs/testing.md` explains the fixture harness (`SYSINFO_SYS_ROOT` + stub `bin/` on `PATH`).
 - `scripts/capture.sh` regenerates `design/screenshots/` (needs a display or `xvfb-run`, plus `grim` on Wayland or `import` on X11). Please review the full tab × theme matrix before calling a UI change done.
 - CI (`.github/workflows/rust.yml`) runs `cargo build` + `cargo test` on pushes/PRs to `main`.
+
+Bug reports are most useful when they include the machine's hardware and what the app showed. Detection problems on unusual hardware are especially welcome.
+
+## About the code
+
+This project was written with [OpenCode](https://opencode.ai/) + [Mattpocock's skills](https://www.aihero.dev/skills) and tested by the author. The data layer has fixture-based tests, and CI runs them on every push.
 
 ## License & credits
 
