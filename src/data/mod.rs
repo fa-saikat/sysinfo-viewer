@@ -38,13 +38,14 @@ pub struct SystemSnapshot {
 
 impl SystemSnapshot {
     pub fn collect() -> Self {
-        // A single `System` refresh backs the OS/CPU/memory collectors so
-        // we don't pay sysinfo's refresh cost three times over. Storage,
-        // network, and GPU info come from their own dedicated sources
-        // (Disks/Networks, /sys, lspci) since sysinfo's `System` doesn't
-        // carry them.
-        let mut sys = System::new_all();
-        sys.refresh_all();
+        // One `System` backs the CPU and memory collectors, refreshed for
+        // only those two: a full refresh also walks every process, which
+        // no tab shows and which is slow on the UI thread. OS facts
+        // are static `System` calls; storage, network, and GPU info come
+        // from their own sources (Disks/Networks, /sys, lspci).
+        let mut sys = System::new();
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
 
         Self {
             os: os::collect(),
