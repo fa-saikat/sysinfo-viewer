@@ -197,10 +197,16 @@ fn normal_fixture_collects_every_tab_end_to_end() {
         "sys/devices/system/cpu/cpu1/cache/index3/shared_cpu_list",
         "0-11\n",
     );
+    fixture.write("sys/class/dmi/id/product_name", "XPS 13 9380\n");
+    fixture.write("sys/class/dmi/id/product_serial", "PF2ABC123\n");
     fixture.stub("lspci", LSPCI_INTEL);
     let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
 
     let snapshot = SystemSnapshot::collect();
+
+    // Overview device facts: read once into the snapshot.
+    assert_eq!(snapshot.device.product_name.as_deref(), Some("XPS 13 9380"));
+    assert_eq!(snapshot.device.serial_number.as_deref(), Some("PF2ABC123"));
 
     // Overview inputs: header freshness plus hostname/distro subtitle.
     assert!(!snapshot.age_label().is_empty());
@@ -259,6 +265,7 @@ fn normal_fixture_collects_every_tab_end_to_end() {
     assert!(gpu.model.contains("UHD Graphics 620"));
     assert_eq!(gpu.driver, "i915");
     assert!(matches!(gpu.vram, VramSize::Shared));
+    assert!(!snapshot.lspci_missing, "stubbed lspci is installed");
 }
 
 #[test]
@@ -271,6 +278,9 @@ fn no_tools_fixture_degrades_honestly() {
     let snapshot = SystemSnapshot::collect();
 
     assert!(snapshot.gpus.is_empty(), "no lspci means no GPUs, not fake ones");
+    assert!(snapshot.lspci_missing, "no lspci on PATH is reported missing");
+    assert_eq!(snapshot.device.product_name, None);
+    assert_eq!(snapshot.device.serial_number, None);
     assert!(snapshot.cpu.cache.is_empty());
     for iface in &snapshot.network {
         assert!(matches!(
@@ -311,6 +321,35 @@ fn no_tools_fixture_degrades_honestly() {
     assert_network_invariants(&snapshot.network);
     assert_storage_invariants(&snapshot.storage);
     assert!(!snapshot.os.hostname.is_empty());
+}
+
+#[test]
+fn failing_lspci_is_not_reported_missing() {
+    // Installed but erroring (e.g. no PCI bus in a container): no GPUs,
+    // but telling the user to install pciutils would be false.
+    let fixture = Fixture::new("lspci-fails");
+    fixture.stub("lspci", "exit 1");
+    let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+
+    let snapshot = SystemSnapshot::collect();
+
+    assert!(snapshot.gpus.is_empty());
+    assert!(!snapshot.lspci_missing);
+}
+
+#[test]
+fn lspci_runs_once_per_collection() {
+    // Listing GPUs and detecting a missing lspci share one run; a second
+    // probe (e.g. `lspci --version`) must not creep back in.
+    let fixture = Fixture::new("lspci-count");
+    let log = fixture.root.join("lspci.calls");
+    fixture.stub("lspci", &format!("echo run >> '{}'", log.display()));
+    let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+
+    SystemSnapshot::collect();
+
+    let calls = fs::read_to_string(&log).unwrap_or_default();
+    assert_eq!(calls.lines().count(), 1, "lspci invocations per collect");
 }
 
 #[test]

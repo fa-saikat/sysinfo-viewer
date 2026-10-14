@@ -24,7 +24,7 @@ use sysinfo_viewer::search::{count_matches, tab_matches};
 use super::sidebar::{brand, NavItem, SIDEBAR_WIDTH};
 use crate::tab::{Tab, TABS};
 use crate::theme;
-use sysinfo_viewer::data::{serial_number, SystemSnapshot};
+use sysinfo_viewer::data::SystemSnapshot;
 
 pub const KEY_CONTEXT: &str = "SysInfo";
 
@@ -33,7 +33,6 @@ pub struct RootView {
     tab: Tab,
     snapshot: SystemSnapshot,
     serial_shown: bool,
-    lspci_missing: bool,
     search: Entity<InputState>,
     query: String,
     slash: Kbd,
@@ -55,7 +54,6 @@ impl RootView {
             tab: initial.unwrap_or(Tab::Overview),
             snapshot: SystemSnapshot::collect(),
             serial_shown: false,
-            lspci_missing: lspci_missing(),
             search,
             query: String::new(),
             slash: Kbd::new(Keystroke::parse("/").expect("slash keystroke parses")),
@@ -70,7 +68,6 @@ impl RootView {
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.snapshot = SystemSnapshot::collect();
-        self.lspci_missing = lspci_missing();
         cx.notify();
     }
 
@@ -146,14 +143,17 @@ impl RootView {
                 }),
         );
         if self.tab == Tab::Overview {
-            let report = overview_report(&self.snapshot, self.serial_shown);
+            let view = view.clone();
             actions = actions.child(
                 Button::new("header-copy")
                     .primary()
                     .label("Copy details")
                     .icon(IconName::Copy)
                     .on_click(move |_, window, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(report.clone()));
+                        // Built on click, not per render: only a copy needs it.
+                        let this = view.read(cx);
+                        let report = overview_report(&this.snapshot, this.serial_shown);
+                        cx.write_to_clipboard(ClipboardItem::new_string(report));
                         window.push_notification(
                             Notification::success("Overview details copied to clipboard")
                                 .title("Copied details"),
@@ -284,7 +284,7 @@ impl RootView {
     }
 
     fn notice(&self, view: &Entity<Self>, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.lspci_missing {
+        if !self.snapshot.lspci_missing {
             return None;
         }
         let action = Button::new("notice-refresh")
@@ -317,7 +317,7 @@ impl RootView {
         let query = self.query.clone();
         let content: Div = match self.tab {
             Tab::Overview => {
-                let toggle = match serial_number() {
+                let toggle = match self.snapshot.device.serial_number {
                     Some(_) => {
                         let label = if self.serial_shown { "Hide" } else { "Show" };
                         let view = cx.entity();
@@ -340,7 +340,6 @@ impl RootView {
                     .gap(px(20.))
                     .children(views::overview(
                         &self.snapshot,
-                        serial_number(),
                         self.serial_shown,
                         toggle,
                         &query,
@@ -389,7 +388,6 @@ impl RootView {
                 div().flex().flex_col().gap(px(20.)).children(
                     views::graphics(
                         &self.snapshot,
-                        self.lspci_missing,
                         Some(action),
                         &query,
                         cx,
@@ -406,7 +404,7 @@ impl RootView {
 /// masked unless revealed — because the button copies the page.
 fn overview_report(snapshot: &SystemSnapshot, serial_shown: bool) -> String {
     use sysinfo_viewer::data::{
-        format_bytes, format_frequency_mhz, product_name, serial_number, storage_totals,
+        format_bytes, format_frequency_mhz, storage_totals,
     };
     let cpu = &snapshot.cpu;
     let max_freq = cpu
@@ -414,15 +412,19 @@ fn overview_report(snapshot: &SystemSnapshot, serial_shown: bool) -> String {
         .map(format_frequency_mhz)
         .unwrap_or_else(|| "Unknown".to_string());
     let (_, storage_total) = storage_totals(&snapshot.storage);
-    let serial = match serial_number() {
-        Some(number) if serial_shown => number,
+    let device = &snapshot.device;
+    let serial = match &device.serial_number {
+        Some(number) if serial_shown => number.clone(),
         Some(_) => "••••••••••".to_string(),
         None => "Unknown".to_string(),
     };
     [
         (
             "Model",
-            product_name().unwrap_or_else(|| "Unknown".to_string()),
+            device
+                .product_name
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string()),
         ),
         (
             "Processor",
@@ -459,16 +461,6 @@ fn overview_report(snapshot: &SystemSnapshot, serial_shown: bool) -> String {
     .map(|(label, value)| format!("{label}: {value}"))
     .collect::<Vec<_>>()
     .join("\n")
-}
-
-/// `lspci` absence is the one external-tool state with UI consequences
-/// (no GPU rows), so it is detected on every refresh for the notice.
-fn lspci_missing() -> bool {
-    std::process::Command::new("lspci")
-        .arg("--version")
-        .output()
-        .map(|output| !output.status.success())
-        .unwrap_or(true)
 }
 
 impl Render for RootView {

@@ -47,18 +47,24 @@ pub fn vram_label(vram: &VramSize, system_total_bytes: u64) -> String {
     }
 }
 
-pub fn collect() -> Vec<GpuInfo> {
-    let Some(lspci_output) = run(&["lspci", "-k"]) else {
-        return Vec::new();
-    };
+/// GPUs from `lspci -k`, or `None` when lspci can't be run at all (not
+/// installed). An lspci that runs but fails is installed, so it yields
+/// `Some` with no GPUs rather than a misleading "install pciutils".
+pub fn collect() -> Option<Vec<GpuInfo>> {
+    let output = Command::new("lspci").arg("-k").output().ok()?;
+    if !output.status.success() {
+        return Some(Vec::new());
+    }
+    let lspci_output = String::from_utf8_lossy(&output.stdout);
 
-    parse_lspci(&lspci_output)
+    let gpus = parse_lspci(&lspci_output)
         .into_iter()
         .map(|mut gpu| {
             gpu.vram = resolve_vram(&gpu);
             gpu
         })
-        .collect()
+        .collect();
+    Some(gpus)
 }
 
 /// Parses `lspci -k` blocks like:
