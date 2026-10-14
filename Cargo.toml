@@ -10,8 +10,10 @@ anyhow = "1"
 # builds against; bump this one line to move the suite together.
 gpui-kit = "=0.7.1"
 
-# System info collection.
-sysinfo = "0.31"
+# System info collection. Only the pieces we read: no process/user/
+# sensor support, and no rayon pool (`multithread`) for a process scan
+# we never run.
+sysinfo = { version = "0.31", default-features = false, features = ["system", "disk", "network"] }
 
 # Per-interface IP addresses (sysinfo covers name/mac/traffic but not IPs).
 if-addrs = "0.10"
