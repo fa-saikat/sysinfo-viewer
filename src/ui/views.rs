@@ -18,7 +18,7 @@ use sysinfo_viewer::search::{frequency_facts, is_connected, matches_query, row_t
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
-    format_bytes, format_frequency_mhz, product_name, storage_totals, SystemSnapshot,
+    format_bytes, format_frequency_mhz, storage_totals, SystemSnapshot,
 };
 
 /// One description-list group inside a rounded card.
@@ -129,7 +129,6 @@ fn filter_rows(
 /// the same line as the serial itself.
 pub fn overview(
     snapshot: &SystemSnapshot,
-    serial: Option<String>,
     serial_shown: bool,
     serial_toggle: Option<AnyElement>,
     query: &str,
@@ -141,7 +140,11 @@ pub fn overview(
         .map(format_frequency_mhz)
         .unwrap_or_else(|| "Unknown".to_string());
     let (_, storage_total) = storage_totals(&snapshot.storage);
-    let model = product_name().unwrap_or_else(|| "Unknown".to_string());
+    let model = snapshot
+        .device
+        .product_name
+        .as_deref()
+        .unwrap_or("Unknown");
     let processor = format!("{} · {} threads · {}", cpu.model, cpu.logical_threads, max_freq);
     let memory = format_bytes(snapshot.memory.total_bytes);
     let graphics = snapshot
@@ -156,27 +159,23 @@ pub fn overview(
     };
 
     let mut device: Vec<(&str, Div)> = vec![
-        ("Model", body(&model, cx)),
+        ("Model", body(model, cx)),
         ("Processor", body(&processor, cx)),
         ("Memory", body(&memory, cx)),
         ("Graphics", body(&graphics, cx)),
         ("Storage", body(&storage, cx)),
     ];
-    let shown = serial
-        .as_deref()
-        .map(|number| {
-            if serial_shown {
-                number.to_string()
-            } else {
-                "••••••••••".to_string()
-            }
-        })
-        .unwrap_or_else(|| "Unknown".to_string());
+    let serial = &snapshot.device.serial_number;
+    let shown = match serial {
+        Some(number) if serial_shown => number.as_str(),
+        Some(_) => "••••••••••",
+        None => "Unknown",
+    };
     let mut serial_row = div()
         .flex()
         .items_center()
         .gap(px(10.))
-        .child(mono(&shown, cx));
+        .child(mono(shown, cx));
     if serial.is_some() {
         if let Some(toggle) = serial_toggle {
             serial_row = serial_row.child(toggle);
@@ -604,7 +603,6 @@ fn storage_row(device: &sysinfo_viewer::data::StorageDevice, cx: &App) -> Div {
 /// honest empty state naming the missing tool with a recovery action.
 pub fn graphics(
     snapshot: &SystemSnapshot,
-    lspci_missing: bool,
     empty_action: Option<AnyElement>,
     query: &str,
     cx: &App,
@@ -621,7 +619,7 @@ pub fn graphics(
                 )))
                 .title(EmptyTitle::new().child("No GPU details yet".to_string()))
                 .description(EmptyDescription::new().child(
-                    if lspci_missing {
+                    if snapshot.lspci_missing {
                         "lspci is not installed, so this tab cannot list GPUs. Install pciutils, then choose Refresh.".to_string()
                     } else {
                         "No GPUs were detected on this system.".to_string()

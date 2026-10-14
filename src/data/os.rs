@@ -21,17 +21,22 @@ pub fn collect() -> OsInfo {
     }
 }
 
-/// Machine serial from DMI, when userspace is allowed to see it. Often
-/// root-only or filled with a placeholder on VMs, so `None` is routine —
-/// the UI says "Unknown" rather than inventing one.
-pub fn serial_number() -> Option<String> {
-    dmi_value("product_serial")
+/// DMI identity for the Overview device list, read once per snapshot
+/// (it can't change while the app runs). `None` means "couldn't
+/// determine" and the UI says "Unknown" rather than inventing one.
+pub struct DeviceInfo {
+    /// Bare-metal product name, e.g. "XPS 13 9380".
+    pub product_name: Option<String>,
+    /// Machine serial, when userspace may see it. Often root-only or a
+    /// placeholder on VMs, so `None` is routine.
+    pub serial_number: Option<String>,
 }
 
-/// Bare-metal product name for the Overview device list. Same honesty
-/// rules as the serial: `None` means "couldn't determine".
-pub fn product_name() -> Option<String> {
-    dmi_value("product_name")
+pub fn collect_device() -> DeviceInfo {
+    DeviceInfo {
+        product_name: dmi_value("product_name"),
+        serial_number: dmi_value("product_serial"),
+    }
 }
 
 fn dmi_value(field: &str) -> Option<String> {

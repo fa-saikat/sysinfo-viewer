@@ -20,7 +20,7 @@ pub use cpu::{CacheInfo, CpuInfo, FrequencyScaling, Virtualization};
 pub use gpu::{vram_label, GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
-pub use os::{product_name, serial_number, OsInfo};
+pub use os::{DeviceInfo, OsInfo};
 pub use storage::{StorageDevice, storage_totals, unique_devices};
 
 use std::time::Instant;
@@ -28,11 +28,15 @@ use sysinfo::System;
 
 pub struct SystemSnapshot {
     pub os: OsInfo,
+    pub device: DeviceInfo,
     pub cpu: CpuInfo,
     pub memory: MemoryInfo,
     pub network: Vec<NetworkInterface>,
     pub storage: Vec<StorageDevice>,
     pub gpus: Vec<GpuInfo>,
+    /// lspci couldn't be run (not installed), so GPUs can't be listed.
+    /// Detected by the same lspci run that lists the GPUs.
+    pub lspci_missing: bool,
     pub collected_at: Instant,
 }
 
@@ -47,13 +51,17 @@ impl SystemSnapshot {
         sys.refresh_cpu_all();
         sys.refresh_memory();
 
+        let gpus = gpu::collect();
+
         Self {
             os: os::collect(),
+            device: os::collect_device(),
             cpu: cpu::collect(&sys),
             memory: memory::collect(&sys),
             network: network::collect(),
             storage: storage::collect(),
-            gpus: gpu::collect(),
+            lspci_missing: gpus.is_none(),
+            gpus: gpus.unwrap_or_default(),
             collected_at: Instant::now(),
         }
     }
@@ -149,6 +157,10 @@ mod tests {
                 hostname: String::new(),
                 uptime: String::new(),
             },
+            device: DeviceInfo {
+                product_name: None,
+                serial_number: None,
+            },
             cpu: CpuInfo {
                 model: String::new(),
                 architecture: String::new(),
@@ -170,6 +182,7 @@ mod tests {
             network: Vec::new(),
             storage: Vec::new(),
             gpus: Vec::new(),
+            lspci_missing: false,
             collected_at: Instant::now(),
         };
         assert_eq!(snapshot.age_label(), "Just now");

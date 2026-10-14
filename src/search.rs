@@ -7,7 +7,7 @@
 //! test` without a display.
 
 use super::data::{
-    format_bytes, format_frequency_mhz, product_name, serial_number, storage_totals, vram_label,
+    format_bytes, format_frequency_mhz, storage_totals, vram_label,
     CpuInfo, InterfaceState, SystemSnapshot,
 };
 
@@ -87,7 +87,7 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
             vec![
                 text(
                     "Model",
-                    &product_name().unwrap_or_else(|| "Unknown".to_string()),
+                    snapshot.device.product_name.as_deref().unwrap_or("Unknown"),
                 ),
                 text(
                     "Processor",
@@ -105,15 +105,11 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 text("Storage", &storage),
                 text(
                     "Serial number",
-                    &serial_number()
-                        .map(|number| {
-                            if serial_shown {
-                                number
-                            } else {
-                                "••••••••••".to_string()
-                            }
-                        })
-                        .unwrap_or_else(|| "Unknown".to_string()),
+                    match &snapshot.device.serial_number {
+                        Some(number) if serial_shown => number,
+                        Some(_) => "••••••••••",
+                        None => "Unknown",
+                    },
                 ),
                 text("Distribution", &snapshot.os.distro),
                 text("Kernel", &snapshot.os.kernel_version),
