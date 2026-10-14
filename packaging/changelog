@@ -1,3 +1,11 @@
+sysinfo-viewer (2.1.0-1) unstable; urgency=low
+
+  * Collect device facts and lspci state once per snapshot
+  * Replace per-core frequency chart with static frequency facts
+  * Collect only CPU and memory from sysinfo
+
+ -- FA Saikat <fahimabrar.saikat@gmail.com>  Wed, 14 Oct 2026 19:01:57 +0600
+
 sysinfo-viewer (2.0.1-1) unstable; urgency=low
 
   * Read app version from Cargo.toml at compile time, sidebar and About follow the bump
