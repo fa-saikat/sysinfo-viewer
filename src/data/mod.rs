@@ -16,7 +16,7 @@ mod network;
 mod os;
 mod storage;
 
-pub use cpu::{CacheInfo, CpuInfo, Virtualization};
+pub use cpu::{CacheInfo, CpuInfo, FrequencyScaling, Virtualization};
 pub use gpu::{vram_label, GpuInfo, VramSize};
 pub use memory::MemoryInfo;
 pub use network::{InterfaceState, NetworkInterface};
@@ -155,8 +155,9 @@ mod tests {
                 physical_cores: 0,
                 logical_threads: 0,
                 max_frequency_mhz: None,
+                min_frequency_mhz: None,
+                scaling: cpu::FrequencyScaling::default(),
                 virtualization: cpu::Virtualization::Unknown,
-                per_core_frequency_mhz: Vec::new(),
                 cache: Vec::new(),
             },
             memory: MemoryInfo {

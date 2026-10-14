@@ -4,7 +4,7 @@
 //! Each test points collection at a synthetic root (`SYSINFO_SYS_ROOT`)
 //! plus a stub `bin/` on `PATH`, runs the real `SystemSnapshot::collect`,
 //! and asserts on the exact inputs each tab renders: facts, formatted
-//! strings, table order, chart points and honest fallbacks. `sysinfo` and
+//! strings, table order and honest fallbacks. `sysinfo` and
 //! `if-addrs` read the live machine, so for those sources the tests assert
 //! structural invariants (sorted, well-formed, in-range) rather than fixed
 //! values; everything routed through the fixture seams asserts exact values.
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use sysinfo_viewer::data::{
-    format_bytes, format_frequency_mhz, CpuInfo, GpuInfo, InterfaceState, MemoryInfo,
+    format_bytes, format_frequency_mhz, CpuInfo, FrequencyScaling, GpuInfo, InterfaceState, MemoryInfo,
     NetworkInterface, OsInfo, StorageDevice, SystemSnapshot, Virtualization, VramSize,
 };
 use sysinfo_viewer::search::{count_matches, matches_query, row_texts, tab_matches};
@@ -139,14 +139,26 @@ fn assert_storage_invariants(devices: &[StorageDevice]) {
     }
 }
 
+/// cpu0's cpufreq policy as intel_pstate lays it out: 0.4–4.9 GHz,
+/// powersave with an EPP hint, and boost exposed inverted as no_turbo.
+fn write_intel_cpufreq(fixture: &Fixture) {
+    let cpufreq = "sys/devices/system/cpu/cpu0/cpufreq";
+    fixture.write(&format!("{cpufreq}/cpuinfo_max_freq"), "4900000\n");
+    fixture.write(&format!("{cpufreq}/cpuinfo_min_freq"), "400000\n");
+    fixture.write(&format!("{cpufreq}/scaling_driver"), "intel_pstate\n");
+    fixture.write(&format!("{cpufreq}/scaling_governor"), "powersave\n");
+    fixture.write(
+        &format!("{cpufreq}/energy_performance_preference"),
+        "balance_performance\n",
+    );
+    fixture.write("sys/devices/system/cpu/intel_pstate/no_turbo", "0\n");
+}
+
 #[test]
 fn normal_fixture_collects_every_tab_end_to_end() {
     let fixture = Fixture::new("normal");
     fixture.write("proc/cpuinfo", CPUINFO_VMX);
-    fixture.write(
-        "sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
-        "4900000\n",
-    );
+    write_intel_cpufreq(&fixture);
     fixture.write("sys/devices/system/cpu/cpu0/cache/index0/level", "1\n");
     fixture.write("sys/devices/system/cpu/cpu0/cache/index0/size", "32K\n");
     fixture.write(
@@ -197,17 +209,21 @@ fn normal_fixture_collects_every_tab_end_to_end() {
     assert!(!snapshot.os.kernel_version.is_empty());
     assert!(!snapshot.os.uptime.is_empty());
 
-    // Processor inputs: facts plus the chart points the grid consumes.
+    // Processor inputs: identity facts plus the cpufreq policy.
     assert!(!snapshot.cpu.model.is_empty());
     assert!(!snapshot.cpu.architecture.is_empty());
     assert!(snapshot.cpu.logical_threads >= 1);
-    assert_eq!(
-        snapshot.cpu.per_core_frequency_mhz.len(),
-        snapshot.cpu.logical_threads,
-        "one chart point per thread"
-    );
     assert_eq!(snapshot.cpu.virtualization, Virtualization::IntelVtx);
     assert_eq!(snapshot.cpu.max_frequency_mhz, Some(4900));
+    assert_eq!(snapshot.cpu.min_frequency_mhz, Some(400));
+    let scaling = &snapshot.cpu.scaling;
+    assert_eq!(scaling.driver.as_deref(), Some("intel_pstate"));
+    assert_eq!(scaling.governor.as_deref(), Some("powersave"));
+    assert_eq!(
+        scaling.energy_preference.as_deref(),
+        Some("balance_performance")
+    );
+    assert_eq!(scaling.boost, Some(true), "no_turbo 0 means boost on");
     assert_eq!(format_frequency_mhz(4900), "4.90 GHz");
     let l3 = snapshot
         .cpu
@@ -267,6 +283,30 @@ fn no_tools_fixture_degrades_honestly() {
         "Unknown",
         "unreadable cpuinfo is Unknown, not Unsupported"
     );
+    assert_eq!(snapshot.cpu.min_frequency_mhz, None);
+    assert_eq!(
+        snapshot.cpu.scaling,
+        FrequencyScaling::default(),
+        "no cpufreq tree means no scaling facts, not guessed ones"
+    );
+    let processor_rows = row_texts("processor", &snapshot, false);
+    assert_eq!(snapshot.cpu.max_frequency_mhz, None);
+    assert!(
+        processor_rows.iter().any(|row| row == "Max frequency Unknown"),
+        "no cpufreq means Unknown, never a live reading passed off as max"
+    );
+    for omitted in [
+        "Min frequency",
+        "Scaling driver",
+        "Governor",
+        "Energy preference",
+        "Boost",
+    ] {
+        assert!(
+            !processor_rows.iter().any(|row| row.starts_with(omitted)),
+            "{omitted} row shown without cpufreq"
+        );
+    }
     // Live-sourced tabs still collect without panicking.
     assert_network_invariants(&snapshot.network);
     assert_storage_invariants(&snapshot.storage);
@@ -306,6 +346,60 @@ fn stubbed_discrete_gpus_resolve_dedicated_vram() {
         .find(|g| g.driver == "nvidia")
         .expect("NVIDIA GPU parsed");
     assert!(matches!(nvidia.vram, VramSize::Dedicated(4294967296)));
+}
+
+#[test]
+fn processor_frequency_facts_are_searchable() {
+    let fixture = Fixture::new("cpufreq-search");
+    fixture.write("proc/cpuinfo", CPUINFO_VMX);
+    write_intel_cpufreq(&fixture);
+    let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+
+    let snapshot = SystemSnapshot::collect();
+    let rows = row_texts("processor", &snapshot, false);
+
+    for expected in [
+        "Min frequency 400 MHz",
+        "Max frequency 4.90 GHz",
+        "Scaling driver intel_pstate",
+        "Governor powersave",
+        "Energy preference balance_performance",
+        "Boost Enabled",
+    ] {
+        assert!(
+            rows.iter().any(|row| row == expected),
+            "missing processor row {expected:?} in {rows:?}"
+        );
+    }
+    assert!(
+        !rows.iter().any(|row| row.starts_with("Core ")),
+        "live per-core readings are gone"
+    );
+    assert_eq!(count_matches("processor", &snapshot, false, "intel_pstate").0, 1);
+    assert!(tab_matches("processor", &snapshot, false, "POWERSAVE"));
+}
+
+#[test]
+fn cpufreq_boost_file_wins_over_no_turbo() {
+    // acpi-cpufreq / amd-pstate expose cpufreq/boost directly; it must
+    // win over intel_pstate's inverted no_turbo when both exist.
+    let fixture = Fixture::new("cpufreq-boost");
+    fixture.write("sys/devices/system/cpu/cpufreq/boost", "0\n");
+    fixture.write("sys/devices/system/cpu/intel_pstate/no_turbo", "0\n");
+    let unreadable = Fixture::new("cpufreq-boost-unreadable");
+    unreadable.write("sys/devices/system/cpu/cpufreq/boost", "auto\n");
+
+    let off = {
+        let _env = Env::set(Some(&fixture.root), Some(&fixture.bin()));
+        SystemSnapshot::collect().cpu.scaling.boost
+    };
+    let unknown = {
+        let _env = Env::set(Some(&unreadable.root), Some(&unreadable.bin()));
+        SystemSnapshot::collect().cpu.scaling.boost
+    };
+
+    assert_eq!(off, Some(false), "boost 0 means off, despite no_turbo 0");
+    assert_eq!(unknown, None, "an unrecognised flag is unknown, not off");
 }
 
 #[test]
@@ -422,11 +516,6 @@ fn render_input_shapes_hold_across_tabs() {
     } = &snapshot.os;
     for fact in [distro, kernel_version, hostname, uptime] {
         assert!(!fact.is_empty());
-    }
-    // Processor grid needs per-core points within a sane bound.
-    assert!(!snapshot.cpu.per_core_frequency_mhz.is_empty());
-    for mhz in &snapshot.cpu.per_core_frequency_mhz {
-        assert!((0..100_000).contains(mhz), "implausible frequency {mhz}");
     }
     // Memory tab needs totals plus the swap branch input.
     let MemoryInfo {
