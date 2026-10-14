@@ -474,7 +474,17 @@ fn lspci_missing() -> bool {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = cx.entity();
-        let mut below_header = div().flex().flex_col().gap(px(18.)).mt(px(18.));
+        // Takes the remaining column height so the scroll div below gets a
+        // bounded height and scrolls instead of growing past the window.
+        // (An unbounded flex-col parent sizes to content, which is why
+        // short viewports cut rows off with no way to reach them.)
+        let mut below_header = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .gap(px(18.))
+            .mt(px(18.));
         if let Some(notice) = self.notice(&view, cx) {
             below_header = below_header.child(notice);
         }
@@ -486,6 +496,7 @@ impl Render for RootView {
                     .flex()
                     .flex_col()
                     .flex_1()
+                    .min_h_0()
                     .overflow_y_scrollbar()
                     .child(self.body(cx)),
             );
