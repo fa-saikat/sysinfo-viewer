@@ -54,7 +54,12 @@ pub fn brand(tile: Hsla, glyph: Hsla, muted: Hsla) -> Div {
                         .font_weight(gpui_kit::FontWeight::BOLD)
                         .child("SysInfo"),
                 )
-                .child(div().text_xs().text_color(muted).child("v1.2.0")),
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
+                ),
         )
 }
 

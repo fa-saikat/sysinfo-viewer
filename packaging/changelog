@@ -1,3 +1,16 @@
+sysinfo-viewer (2.0.1-1) unstable; urgency=low
+
+  * Read app version from Cargo.toml at compile time, sidebar and About follow the bump
+  * Bound content column so tab body scrolls on short viewports (refs #21)
+  * Set window title and app_id so taskbar shows app name (refs #19)
+  * Update README
+  * Unify copyright to JaduPc and clean up README
+  * Fix CI build: install GPUI system dependencies
+  * Update README for community, About version to 2.0.0
+  * Add GitHub Actions workflow for Rust project
+
+ -- FA Saikat <fahimabrar.saikat@gmail.com>  Wed, 14 Oct 2026 14:29:09 +0600
+
 sysinfo-viewer (2.0.0-1) unstable; urgency=low
 
   * ui: update about dialog

@@ -64,7 +64,7 @@ pub fn show_about(window: &mut Window, cx: &mut App) {
                             .label_width(px(110.))
                             .columns(1)
                             .bordered(true)
-                            .item("Version", "2.0.0", 1)
+                            .item("Version", env!("CARGO_PKG_VERSION"), 1)
                             .item("Developer", "Fahim A Saikat", 1)
                             .item("Copyright", "© 2026 JaduPc", 1)
                             .item("License", "MIT", 1),
