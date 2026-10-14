@@ -33,18 +33,34 @@ pub struct CpuInfo {
     pub architecture: String,
     pub physical_cores: usize,
     pub logical_threads: usize,
-    /// `None` when neither the sysfs cpufreq path nor sysinfo could
-    /// report a figure (e.g. inside some VMs / containers).
+    /// From cpufreq's `cpuinfo_max_freq`; `None` where cpufreq isn't
+    /// exposed (e.g. inside some VMs / containers).
     pub max_frequency_mhz: Option<u64>,
+    /// Lowest frequency the CPU can run at, from cpufreq. `None` where
+    /// cpufreq isn't exposed.
+    pub min_frequency_mhz: Option<u64>,
+    /// Driver, governor and boost state from the same cpufreq policy.
+    pub scaling: FrequencyScaling,
     pub virtualization: Virtualization,
-    /// Per-core *current* frequency in MHz, in core order. Empty if
-    /// sysinfo reported no cores (shouldn't happen on a real machine, but
-    /// keeps the Processor tab's optional per-core grid honest about
-    /// what it has).
-    pub per_core_frequency_mhz: Vec<u64>,
     /// Unique caches by (level, size, shared set), lowest level first.
     /// Empty where the kernel doesn't expose the cache tree (some VMs).
     pub cache: Vec<CacheInfo>,
+}
+
+/// How the kernel scales CPU frequency, from cpu0's cpufreq policy.
+/// Each field is `None` where its sysfs file is missing (VMs,
+/// containers, drivers that don't expose it), so the Processor tab can
+/// omit the row instead of guessing.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct FrequencyScaling {
+    /// e.g. `amd-pstate-epp`, `intel_pstate`, `acpi-cpufreq`.
+    pub driver: Option<String>,
+    /// e.g. `powersave`, `performance`, `schedutil`.
+    pub governor: Option<String>,
+    /// EPP hint, e.g. `balance_performance`; only on EPP-capable drivers.
+    pub energy_preference: Option<String>,
+    /// Whether the CPU may run above its base clock (turbo / boost).
+    pub boost: Option<bool>,
 }
 
 /// One cache level as reported by sysfs, e.g. L3 at 8 MB shared across
@@ -75,11 +91,9 @@ pub fn collect(sys: &System) -> CpuInfo {
     let logical_threads = sys.cpus().len();
     let physical_cores = sys.physical_core_count().unwrap_or(logical_threads);
 
-    let max_frequency_mhz = max_frequency_from_sysfs().or_else(|| {
-        // Fallback: sysinfo only exposes *current* frequency, but it's
-        // better than nothing if cpufreq sysfs isn't present.
-        sys.cpus().iter().map(|c| c.frequency()).max()
-    });
+    // No fallback to sysinfo: it only knows *current* frequency, and a
+    // live reading shown as the maximum is wrong. Unknown beats wrong.
+    let max_frequency_mhz = frequency_from_sysfs("cpuinfo_max_freq");
 
     CpuInfo {
         model,
@@ -87,24 +101,58 @@ pub fn collect(sys: &System) -> CpuInfo {
         physical_cores,
         logical_threads,
         max_frequency_mhz,
+        min_frequency_mhz: frequency_from_sysfs("cpuinfo_min_freq"),
+        scaling: detect_scaling(),
         virtualization: detect_virtualization(),
-        per_core_frequency_mhz: sys.cpus().iter().map(|c| c.frequency()).collect(),
         cache: detect_cache(),
     }
 }
 
-/// Reads `cpuinfo_max_freq` (kHz) for cpu0 — the standard cpufreq sysfs
-/// path on virtually every Linux distro. Falls back silently if the
-/// kernel doesn't expose cpufreq (some VMs, some ARM boards).
-fn max_frequency_from_sysfs() -> Option<u64> {
-    let khz: u64 = fs::read_to_string(fixture::sys_path(
-        "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq",
-    ))
-    .ok()?
-    .trim()
-    .parse()
-    .ok()?;
+/// Reads a kHz figure such as `cpuinfo_max_freq` from cpu0's cpufreq
+/// directory — the standard sysfs path on virtually every Linux distro.
+/// `None` if the kernel doesn't expose cpufreq (some VMs, some ARM
+/// boards).
+fn frequency_from_sysfs(file: &str) -> Option<u64> {
+    let khz: u64 = cpufreq_value(file)?.parse().ok()?;
     Some(khz / 1000)
+}
+
+/// Trimmed contents of one cpu0 cpufreq file, `None` if missing or empty.
+fn cpufreq_value(file: &str) -> Option<String> {
+    read_trimmed(&format!("/sys/devices/system/cpu/cpu0/cpufreq/{file}"))
+}
+
+fn read_trimmed(path: &str) -> Option<String> {
+    let value = fs::read_to_string(fixture::sys_path(path)).ok()?;
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn detect_scaling() -> FrequencyScaling {
+    FrequencyScaling {
+        driver: cpufreq_value("scaling_driver"),
+        governor: cpufreq_value("scaling_governor"),
+        energy_preference: cpufreq_value("energy_performance_preference"),
+        boost: detect_boost(),
+    }
+}
+
+/// `cpufreq/boost` (acpi-cpufreq, amd-pstate) is 1 when boost is on;
+/// intel_pstate has no such file and exposes the inverse as `no_turbo`.
+fn detect_boost() -> Option<bool> {
+    if let Some(boost) = read_trimmed("/sys/devices/system/cpu/cpufreq/boost") {
+        return parse_flag(&boost);
+    }
+    let no_turbo = read_trimmed("/sys/devices/system/cpu/intel_pstate/no_turbo")?;
+    parse_flag(&no_turbo).map(|off| !off)
+}
+
+fn parse_flag(value: &str) -> Option<bool> {
+    match value {
+        "1" => Some(true),
+        "0" => Some(false),
+        _ => None,
+    }
 }
 
 /// Cache tree from `/sys/devices/system/cpu/cpu*/cache/index*`. Scans

@@ -1,11 +1,10 @@
-//! Tab bodies: description lists, tables and charts per tab.
+//! Tab bodies: description lists and tables per tab.
 //!
 //! Every builder takes the toolbar query and hides non-matching rows.
 //! Row inventories for counting and auto-switch live in [`row_texts`]
 //! and [`group_titles`]: keep them in sync with what the builders render,
 //! matching on the same plain strings the rows are built from.
 
-use gpui_kit::component::chart::LineChart;
 use gpui_kit::component::empty::{
     Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
 };
@@ -15,8 +14,7 @@ use gpui_kit::prelude::*;
 use gpui_kit::{div, px, white, AnyElement, App, Div, Styled};
 
 use super::library::{fact_tag, group_title, hug, state_badge, BadgeTone};
-use sysinfo_viewer::data::CpuInfo;
-use sysinfo_viewer::search::{is_connected, matches_query, row_texts};
+use sysinfo_viewer::search::{frequency_facts, is_connected, matches_query, row_texts};
 use super::sidebar::context_tile;
 use crate::tab::Tab;
 use sysinfo_viewer::data::{
@@ -207,10 +205,9 @@ fn software_texts(snapshot: &SystemSnapshot) -> Vec<String> {
     all[6..].to_vec()
 }
 
-/// Processor: facts plus per-core frequency as a line chart (x is core
-/// index, y is MHz, linear interpolation, dots, accent stroke, y-axis
-/// with tick labels). An empty reading list renders honestly instead of
-/// an empty chart.
+/// Processor: identity facts, then the Frequency group of stable
+/// cpufreq facts (range, driver, governor, boost). Live per-core
+/// readings stay out: a snapshot of them is stale on arrival.
 pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
     let cpu = &snapshot.cpu;
     let virt = cpu.virtualization;
@@ -219,15 +216,6 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
         (
             "Cores / threads",
             body(&format!("{} / {}", cpu.physical_cores, cpu.logical_threads), cx),
-        ),
-        (
-            "Max frequency",
-            body(
-                &cpu.max_frequency_mhz
-                    .map(format_frequency_mhz)
-                    .unwrap_or_else(|| "Unknown".to_string()),
-                cx,
-            ),
         ),
         ("Architecture", body(&cpu.architecture, cx)),
         (
@@ -246,62 +234,20 @@ pub fn processor(snapshot: &SystemSnapshot, query: &str, cx: &App) -> Vec<Div> {
             details.push(("Cache", body(&l3.label(), cx)));
         }
     }
-    let details = filter_rows(details, &processor_detail_texts(snapshot), query);
-    let mut groups = vec![group("Processor", list(details, cx), cx)];
-
-    let chart_matches = matches_query(query, "Per-core frequency")
-        || cpu
-            .per_core_frequency_mhz
-            .iter()
-            .enumerate()
-            .any(|(index, mhz)| {
-                matches_query(query, &format!("Core {index} {mhz} MHz"))
-            });
-    if !cpu.per_core_frequency_mhz.is_empty() && (query.trim().is_empty() || chart_matches) {
-        let points = core_points(cpu);
-        let chart = LineChart::new(points)
-            .x(|point: &(String, f64)| point.0.clone())
-            .y(|point: &(String, f64)| point.1)
-            .linear()
-            .dot()
-            .stroke(cx.theme().primary)
-            .y_axis(true)
-            .y_tick_count(4)
-            .y_tick_format(|value| format!("{:.1}", value / 1000.0))
-            .x_tick_count(4);
-        groups.push(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(8.))
-                .child(group_title("Per-core frequency", Some("GHz".to_string()), cx))
-                .child(
-                    div()
-                        .rounded(cx.theme().radius_lg)
-                        .bg(cx.theme().secondary.opacity(0.45))
-                        .border_1()
-                        .border_color(cx.theme().border)
-                        .p(px(16.))
-                        .child(div().h(px(180.)).w_full().child(chart)),
-                ),
-        );
-    } else if cpu.per_core_frequency_mhz.is_empty() {
-        groups.push(group(
-            "Per-core frequency",
-            list(vec![("Readings", muted("No per-core readings", cx))], cx),
-            cx,
-        ));
-    }
-    groups
-}
-
-fn processor_detail_texts(snapshot: &SystemSnapshot) -> Vec<String> {
-    let texts = row_texts("processor", snapshot, false);
-    // Details rows are the inventory minus the per-core point entries.
-    texts
+    let frequency: Vec<(&'static str, Div)> = frequency_facts(cpu)
         .into_iter()
-        .filter(|text| !text.starts_with("Core "))
-        .collect()
+        .map(|(label, value)| (label, body(&value, cx)))
+        .collect();
+
+    // The inventory lists the Processor rows, then the Frequency rows.
+    let texts = row_texts("processor", snapshot, false);
+    let (detail_texts, frequency_texts) = texts.split_at(details.len());
+    let details = filter_rows(details, detail_texts, query);
+    let frequency = filter_rows(frequency, frequency_texts, query);
+    vec![
+        group("Processor", list(details, cx), cx),
+        group("Frequency", list(frequency, cx), cx),
+    ]
 }
 
 /// Memory: headline figures with neutral progress bars, plus the
@@ -749,15 +695,6 @@ pub fn graphics(
                 )
                 .into_any_element(),
         )]
-}
-
-/// Per-core chart points in tab order for the Processor chart.
-pub fn core_points(cpu: &CpuInfo) -> Vec<(String, f64)> {
-    cpu.per_core_frequency_mhz
-        .iter()
-        .enumerate()
-        .map(|(index, mhz)| (format!("Core {index}"), *mhz as f64))
-        .collect()
 }
 
 /// Stat tags for the page header, per tab.

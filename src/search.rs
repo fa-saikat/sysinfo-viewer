@@ -8,7 +8,7 @@
 
 use super::data::{
     format_bytes, format_frequency_mhz, product_name, serial_number, storage_totals, vram_label,
-    InterfaceState, SystemSnapshot,
+    CpuInfo, InterfaceState, SystemSnapshot,
 };
 
 /// Case-insensitive substring match over a row's text. An empty query
@@ -22,13 +22,47 @@ pub fn matches_query(query: &str, haystack: &str) -> bool {
 pub fn group_titles(tab: &str) -> &'static [&'static str] {
     match tab {
         "overview" => &["Device", "Software"],
-        "processor" => &["Processor", "Per-core frequency"],
+        "processor" => &["Processor", "Frequency"],
         "memory" => &["Memory", "Swap"],
         "network" => &["General", "Interfaces"],
         "storage" => &["Devices"],
         "graphics" => &["Detected GPUs"],
         _ => &[],
     }
+}
+
+/// The Processor tab's Frequency rows as (label, value), in render
+/// order. Max frequency always shows (as "Unknown" when unreadable);
+/// every other row is omitted when its sysfs file is missing.
+pub fn frequency_facts(cpu: &CpuInfo) -> Vec<(&'static str, String)> {
+    let scaling = &cpu.scaling;
+    let mut facts = Vec::new();
+    if let Some(mhz) = cpu.min_frequency_mhz {
+        facts.push(("Min frequency", format_frequency_mhz(mhz)));
+    }
+    facts.push((
+        "Max frequency",
+        cpu.max_frequency_mhz
+            .map(format_frequency_mhz)
+            .unwrap_or_else(|| "Unknown".to_string()),
+    ));
+    let scaling_rows = [
+        ("Scaling driver", scaling.driver.clone()),
+        ("Governor", scaling.governor.clone()),
+        ("Energy preference", scaling.energy_preference.clone()),
+        (
+            "Boost",
+            scaling
+                .boost
+                .map(|on| if on { "Enabled" } else { "Disabled" }.to_string()),
+        ),
+    ];
+    facts.extend(
+        scaling_rows
+            .into_iter()
+            .filter_map(|(label, value)| value.map(|value| (label, value))),
+    );
+    facts
 }
 
 fn text(label: &str, value: &str) -> String {
@@ -96,12 +130,6 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                     "Cores / threads",
                     &format!("{} / {}", cpu.physical_cores, cpu.logical_threads),
                 ),
-                text(
-                    "Max frequency",
-                    &cpu.max_frequency_mhz
-                        .map(format_frequency_mhz)
-                        .unwrap_or_else(|| "Unknown".to_string()),
-                ),
                 text("Architecture", &cpu.architecture),
                 text("Virtualization", cpu.virtualization.label()),
             ];
@@ -109,10 +137,9 @@ pub fn row_texts(tab: &str, snapshot: &SystemSnapshot, serial_shown: bool) -> Ve
                 rows.push(text("Cache", &l3.label()));
             }
             rows.extend(
-                cpu.per_core_frequency_mhz
-                    .iter()
-                    .enumerate()
-                    .map(|(index, mhz)| format!("Core {index} {mhz} MHz")),
+                frequency_facts(cpu)
+                    .into_iter()
+                    .map(|(label, value)| text(label, &value)),
             );
             rows
         }

@@ -28,7 +28,7 @@ I built SysInfo Viewer for [ShopnoOS](https://github.com/fa-saikat/shopno-os), o
 | Tab | What you get |
 | --- | --- |
 | **Overview** | Device model, CPU summary, memory, primary GPU, total storage, serial (masked by default), plus distro, kernel, architecture, hostname, and uptime. `Copy details` copies exactly what's on screen. |
-| **Processor** | Model, cores/threads, max frequency, architecture, virtualization badge (`AMD-V` / `Intel VT-x` / `Unknown`), L3 cache, and a per-core frequency chart. |
+| **Processor** | Model, cores/threads, architecture, virtualization badge (`AMD-V` / `Intel VT-x` / `Unknown`), L3 cache, and frequency facts: min/max frequency, scaling driver, governor, energy preference, and boost. |
 | **Memory** | RAM total / used / available with usage bar, plus a separate Swap section that honestly handles the no-swap case. |
 | **Network** | Hostname, `Connected` status, and a sorted interface table: type (`Ethernet` / `Wi-Fi` / `Loopback` / `Virtual`), IPv4, MAC, and `Up` / `Down` / `Unknown` state badges. |
 | **Storage** | Every mounted device with mount point, device node, filesystem type, used/size figures, per-device usage bars, and a deduplicated total (bind mounts don't double-count). |
@@ -38,7 +38,7 @@ I built SysInfo Viewer for [ShopnoOS](https://github.com/fa-saikat/shopno-os), o
 
 - **Global search:** one toolbar box filters every tab. Press `/` to jump to it, see `N of M` live counts, and the app auto-switches to the first tab with a match.
 - **Manual Refresh:** header button re-collects the snapshot and confirms with a notification. The header also shows data freshness (`Just now`, `12s ago`).
-- **Light + dark themes:** one-click toggle in the sidebar footer; accent and charts adapt.
+- **Light + dark themes:** one-click toggle in the sidebar footer; accent adapts.
 
 ## Screenshots
 
